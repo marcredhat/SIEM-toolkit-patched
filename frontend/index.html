@@ -1,0 +1,1171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIEM Toolkit</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 h-screen flex overflow-hidden font-sans">
+
+  <aside class="w-56 shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col">
+    <div class="p-4 border-b border-gray-800">
+      <div class="flex items-center gap-2">
+        <div class="w-6 h-6 rounded bg-purple-600 flex items-center justify-center text-xs font-bold text-white">S1</div>
+        <span class="font-semibold text-sm text-white">SIEM Toolkit</span>
+      </div>
+      <p class="text-xs text-gray-500 mt-1">demo.sentinelone.net</p>
+    </div>
+    <nav class="flex-1 p-3 space-y-1">
+      <a href="#/" data-page="home"       class="nav-link flex items-center px-3 py-2 rounded-lg text-sm cursor-pointer">Overview</a>
+      <a href="#/coverage" data-page="coverage" class="nav-link flex items-center px-3 py-2 rounded-lg text-sm cursor-pointer">Parser Coverage</a>
+      <a href="#/ingest" data-page="ingest"   class="nav-link flex items-center px-3 py-2 rounded-lg text-sm cursor-pointer">Ingest Dashboard</a>
+      <a href="#/quality"    data-page="quality"    class="nav-link flex items-center px-3 py-2 rounded-lg text-sm cursor-pointer">Parser Quality</a>
+      <a href="#/onboarding" data-page="onboarding" class="nav-link flex items-center px-3 py-2 rounded-lg text-sm cursor-pointer">Onboarding</a>
+    </nav>
+    <div class="p-3 border-t border-gray-800">
+      <a href="#/settings" data-page="settings" class="nav-link flex items-center gap-2 px-3 py-2 rounded-lg text-sm cursor-pointer text-gray-400 hover:bg-gray-800 hover:text-gray-100 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+        Settings
+      </a>
+    </div>
+  </aside>
+
+  <main class="flex-1 overflow-auto" id="main"></main>
+
+<script>
+const API = 'http://localhost:8001'
+
+// ── Utilities ──────────────────────────────────────────────────────────────
+
+async function apiFetch(path, opts = {}) {
+  const res = await fetch(API + path, opts)
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+const apiGet  = path => apiFetch(path)
+const apiPost = (path, body) => apiFetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
+const apiForm = (path, form) => apiFetch(path, { method:'POST', body:form })
+
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
+
+function statCard(label, value, color = 'text-gray-200') {
+  return `<div class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-center">
+    <div class="text-2xl font-bold ${color}">${esc(value)}</div>
+    <div class="text-xs text-gray-500 mt-1">${esc(label)}</div>
+  </div>`
+}
+
+function errBox(msg) {
+  return msg ? `<div class="p-3 bg-red-900/40 border border-red-700 rounded-lg text-sm text-red-300 mb-4">${esc(msg)}</div>` : ''
+}
+
+function setBtn(id, loading, label) {
+  const b = document.getElementById(id)
+  if (!b) return
+  b.disabled = loading
+  b.textContent = loading ? 'Loading…' : label
+}
+
+// ── Simple SVG bar chart ───────────────────────────────────────────────────
+
+function barChart(rows, labelKey, valueKey) {
+  if (!rows?.length) return '<p class="text-gray-600 text-sm h-32 flex items-center justify-center">No data</p>'
+  const vals = rows.map(r => r[valueKey] || 0)
+  const max = Math.max(...vals, 1)
+  const W = 680, H = 160, padL = 52, padR = 10, padT = 24, padB = 28
+  const chartW = W - padL - padR
+  const chartH = H - padT - padB
+  const bw = Math.max(8, Math.floor(chartW / rows.length) - 4)
+
+  const defs = `<defs>
+    <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#c084fc"/>
+      <stop offset="100%" stop-color="#6d28d9"/>
+    </linearGradient>
+  </defs>`
+
+  // Y-axis ticks (4 lines)
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(t => {
+    const val = Math.round(max * t)
+    const y = padT + chartH - Math.floor(t * chartH)
+    const label = val >= 1000 ? (val/1000).toFixed(1)+'k' : val
+    return `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#1f2937" stroke-width="1"/>
+            <text x="${padL - 4}" y="${y + 4}" text-anchor="end" fill="#4b5563" font-size="9">${label}</text>`
+  }).join('')
+
+  const bars = rows.map((r, i) => {
+    const val = r[valueKey] || 0
+    const bh = Math.max(2, Math.floor((val / max) * chartH))
+    const x = padL + i * (chartW / rows.length) + (chartW / rows.length - bw) / 2
+    const y = padT + chartH - bh
+    // If label looks like a date (YYYY-MM-DD), show MM/DD; otherwise truncate to 10 chars
+    const rawLbl = String(r[labelKey] || '')
+    const lbl = esc(/^\d{4}-\d{2}-\d{2}$/.test(rawLbl) ? rawLbl.slice(5, 10) : rawLbl.slice(0, 10))
+    // value label on top of bar
+    const valLbl = val >= 1000 ? (val/1000).toFixed(1)+'k' : val
+    return `<rect x="${x}" y="${y}" width="${bw}" height="${bh}" fill="url(#barGrad)" rx="2"/>
+            <text x="${x + bw/2}" y="${y - 4}" text-anchor="middle" fill="#c084fc" font-size="9" font-weight="500">${valLbl}</text>
+            <text x="${x + bw/2}" y="${H - 6}" text-anchor="middle" fill="#6b7280" font-size="9">${lbl}</text>`
+  }).join('')
+
+  return `<svg viewBox="0 0 ${W} ${H}" class="w-full">${defs}${ticks}${bars}</svg>`
+}
+
+// ── Home ──────────────────────────────────────────────────────────────────
+
+function renderHome() {
+  set(`<div class="p-8 max-w-5xl">
+    <div class="mb-6">
+      <h1 class="text-2xl font-bold text-white">SIEM Engineering Toolkit</h1>
+      <p class="text-gray-400 mt-1">SentinelOne AI-SIEM · demo.sentinelone.net</p>
+    </div>
+    <div id="home-stats" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center animate-pulse">
+        <div class="h-7 w-16 bg-gray-800 rounded mx-auto mb-1"></div>
+        <div class="h-3 w-20 bg-gray-800 rounded mx-auto"></div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center animate-pulse">
+        <div class="h-7 w-16 bg-gray-800 rounded mx-auto mb-1"></div>
+        <div class="h-3 w-20 bg-gray-800 rounded mx-auto"></div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center animate-pulse">
+        <div class="h-7 w-16 bg-gray-800 rounded mx-auto mb-1"></div>
+        <div class="h-3 w-20 bg-gray-800 rounded mx-auto"></div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center animate-pulse">
+        <div class="h-7 w-16 bg-gray-800 rounded mx-auto mb-1"></div>
+        <div class="h-3 w-20 bg-gray-800 rounded mx-auto"></div>
+      </div>
+    </div>
+    <div id="home-uncovered" class="hidden mb-8"></div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+      ${homeCard('#/coverage','Parser Coverage Map','See which active data sources have a parser running and which need one.','Open Coverage Map','from-purple-700 to-purple-900')}
+      ${homeCard('#/ingest','Ingest Dashboard','Visualize event volume by source and type. Simulate exclusion filters before applying them.','Open Dashboard','from-blue-700 to-blue-900')}
+      ${homeCard('#/quality','Parser Quality','Sample live events, measure field population rates, and test parser patterns against raw log lines.','Open Quality Tools','from-amber-700 to-amber-900')}
+      ${homeCard('#/onboarding','Onboarding Accelerator','Step-by-step guide for onboarding a new log source using Claude Code directly.','View Guide','from-emerald-700 to-emerald-900')}
+    </div>
+  </div>`)
+  homeLoadStats()
+}
+
+async function homeLoadStats() {
+  try {
+    const r = await apiGet('/api/coverage/map')
+    const sources = r.sources || []
+    const total = sources.length
+    const covered = sources.filter(s => s.status === 'covered').length
+    const needed = sources.filter(s => s.status === 'parser_needed').length
+    const pct = total ? Math.round(covered / total * 100) : 0
+    const pctColor = pct >= 80 ? 'text-emerald-400' : pct >= 50 ? 'text-amber-400' : 'text-red-400'
+
+    document.getElementById('home-stats').innerHTML = `
+      ${homeStat(pct + '%', 'Parser Coverage', pctColor)}
+      ${homeStat(total.toLocaleString(), 'Active Sources', 'text-blue-400')}
+      ${homeStat(covered.toLocaleString(), 'Covered', 'text-emerald-400')}
+      ${homeStat(needed.toLocaleString(), 'Need Parser', needed > 0 ? 'text-red-400' : 'text-gray-500')}`
+
+    // Top uncovered sources by volume
+    const uncovered = sources
+      .filter(s => s.status === 'parser_needed')
+      .sort((a, b) => (b.event_count || 0) - (a.event_count || 0))
+      .slice(0, 5)
+
+    if (uncovered.length) {
+      const rows = uncovered.map(s => `
+        <tr class="border-b border-gray-800/50">
+          <td class="py-2 pr-4 font-mono text-xs text-gray-200">
+            <a href="#/quality" onclick="queueQualitySource('${esc(s.source_name)}')" class="hover:text-purple-400 cursor-pointer">${esc(s.source_name)}</a>
+          </td>
+          <td class="py-2 text-xs text-gray-400">${(s.event_count || 0).toLocaleString()} events</td>
+        </tr>`).join('')
+
+      document.getElementById('home-uncovered').classList.remove('hidden')
+      document.getElementById('home-uncovered').innerHTML = `
+        <div class="bg-gray-900 border border-red-900/40 rounded-xl p-5">
+          <h2 class="text-sm font-semibold text-white mb-1">Top Sources Needing a Parser</h2>
+          <p class="text-xs text-gray-500 mb-3">Highest-volume sources with no parser running — click to inspect in Parser Quality.</p>
+          <table class="w-full">
+            <thead><tr class="text-left text-gray-500 border-b border-gray-800">
+              <th class="pb-2 pr-4 text-xs font-medium">Source</th>
+              <th class="pb-2 text-xs font-medium">Volume</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`
+    }
+  } catch(e) {
+    document.getElementById('home-stats').innerHTML = `
+      ${homeStat('—', 'Parser Coverage', 'text-gray-600')}
+      ${homeStat('—', 'Active Sources', 'text-gray-600')}
+      ${homeStat('—', 'Covered', 'text-gray-600')}
+      ${homeStat('—', 'Need Parser', 'text-gray-600')}`
+  }
+}
+
+function homeStat(value, label, valueClass) {
+  return `<div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+    <div class="text-2xl font-bold ${valueClass} mb-1">${value}</div>
+    <div class="text-xs text-gray-500">${label}</div>
+  </div>`
+}
+
+function homeCard(href, title, desc, cta, grad) {
+  return `<div class="bg-gray-900 border border-gray-800 rounded-xl p-6 flex flex-col gap-4">
+    <div class="w-10 h-10 rounded-lg bg-gradient-to-br ${grad}"></div>
+    <div><h2 class="font-semibold text-white">${esc(title)}</h2>
+    <p class="text-sm text-gray-400 mt-1 leading-relaxed">${esc(desc)}</p></div>
+    <a href="${href}" class="mt-auto text-sm text-purple-400 hover:text-purple-300 font-medium">${esc(cta)} →</a>
+  </div>`
+}
+
+// Queue a source to be pre-selected when Quality page loads
+let _pendingQualitySource = null
+function queueQualitySource(source) {
+  _pendingQualitySource = source
+}
+
+// ── Coverage ──────────────────────────────────────────────────────────────
+
+let cvFilter = 'all', cvData = null
+
+function renderCoverage() {
+  set(`<div class="p-8 max-w-6xl">
+    <div class="flex items-start justify-between mb-6">
+      <div>
+        <h1 class="text-xl font-bold text-white">Parser Coverage Map</h1>
+        <p class="text-sm text-gray-400 mt-1">For each active data source — is a parser loaded?</p>
+      </div>
+      <div class="flex gap-2 flex-wrap justify-end">
+        <button id="btn-sync" onclick="cvSyncSources()" class="px-3 py-1.5 text-sm bg-blue-700 hover:bg-blue-600 rounded-lg text-white">Sync Live Sources</button>
+        <button id="btn-sync-library" onclick="syncLibrary()" class="px-3 py-1.5 text-sm bg-blue-700 hover:bg-blue-600 rounded-lg text-white">Sync Detection Library</button>
+        <button id="btn-sdl-parsers" onclick="loadSDLParsers()" class="px-3 py-1.5 text-sm bg-purple-700 hover:bg-purple-600 rounded-lg text-white">Load SDL Parsers</button>
+        <button onclick="document.getElementById('f-parser').click()" class="px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 rounded-lg text-white">Upload Parser</button>
+        <button onclick="cvReset()" class="px-3 py-1.5 text-sm bg-red-900/60 hover:bg-red-800 rounded-lg text-red-300">Reset</button>
+      </div>
+    </div>
+    <input type="file" id="f-parser" accept=".json" class="hidden" onchange="cvUploadParser(this.files[0])">
+    <div id="cv-err"></div>
+    <div id="cv-stats"></div>
+    <div id="cv-filters" class="flex gap-2 mb-4 hidden"></div>
+    <div id="cv-table"></div>
+  </div>`)
+  cvLoad()
+}
+
+async function syncLibrary() {
+  setBtn('btn-sync-library', true)
+  const errEl = document.getElementById('cv-err')
+  if (errEl) errEl.innerHTML = ''
+  try {
+    const r = await apiPost('/api/coverage/load-detections', {})
+    if (errEl) {
+      errEl.innerHTML = `<div class="p-3 bg-emerald-900/40 border border-emerald-700 rounded-lg text-sm text-emerald-300 mb-4">✓ ${r.loaded} detection rules synced from ${r.source === 'api' ? 'S1 API' : 'local file'}</div>`
+      setTimeout(() => { errEl.innerHTML = '' }, 4000)
+    }
+    cvLoad()
+  } catch(e) {
+    if (errEl) errEl.innerHTML = errBox(e.message)
+  } finally { setBtn('btn-sync-library', false, 'Sync Detection Library') }
+}
+
+async function loadSDLParsers() {
+  setBtn('btn-sdl-parsers', true)
+  const errEl = document.getElementById('cv-err')
+  if (errEl) errEl.innerHTML = ''
+  try {
+    const res = await apiPost('/api/coverage/load-parsers-from-sdl', {})
+    let msg = `✓ ${res.loaded} parser${res.loaded !== 1 ? 's' : ''} loaded`
+    if (res.errors?.length) {
+      msg += ` — ${res.errors.length} failed: ${res.errors.map(e=>e.parser).join(', ')}`
+      if (errEl) errEl.innerHTML = errBox(msg)
+    } else {
+      if (errEl) errEl.innerHTML = `<div class="p-3 bg-emerald-900/40 border border-emerald-700 rounded-lg text-sm text-emerald-300 mb-4">${msg}</div>`
+      setTimeout(() => { if (errEl) errEl.innerHTML = '' }, 4000)
+    }
+    cvLoad()
+  } catch(e) {
+    if (errEl) errEl.innerHTML = errBox(e.message)
+  } finally {
+    setBtn('btn-sdl-parsers', false, 'Load SDL Parsers')
+  }
+}
+
+
+function cvToggleMissing(id) {
+  const el = document.getElementById(id)
+  const chevron = document.getElementById(id + '-chevron')
+  if (!el) return
+  const open = el.classList.toggle('hidden')
+  if (chevron) chevron.textContent = open ? '▶' : '▼'
+}
+
+async function cvUploadSigma(files) {
+  const form = new FormData()
+  Array.from(files).forEach(f => form.append('files', f))
+  try { await apiForm('/api/coverage/upload-sigma', form); cvLoad() }
+  catch(e) { document.getElementById('cv-err').innerHTML = errBox(e.message) }
+}
+
+async function cvUploadParser(file) {
+  const form = new FormData(); form.append('file', file)
+  try { await apiForm('/api/coverage/upload-parser', form); cvLoad() }
+  catch(e) { document.getElementById('cv-err').innerHTML = errBox(e.message) }
+}
+
+async function cvReset() {
+  await apiGet('/api/coverage/reset'); cvData = null; cvLoad()
+}
+
+async function cvSyncSources() {
+  setBtn('btn-sync', true)
+  document.getElementById('cv-err').innerHTML = ''
+  try {
+    const r = await apiPost('/api/coverage/sync-sources?days=7', {})
+    await cvLoad()
+  } catch(e) {
+    document.getElementById('cv-err').innerHTML = errBox(e.message)
+  } finally { setBtn('btn-sync', false, 'Sync Live Sources') }
+}
+
+async function cvLoad() {
+  try {
+    cvData = await apiGet('/api/coverage/map')
+    const s = cvData.summary
+
+    document.getElementById('cv-stats').innerHTML = `
+      <div class="grid grid-cols-4 gap-3 mb-6">
+        ${statCard('Active Sources', s.active_sources)}
+        ${statCard('Covered', s.covered, 'text-emerald-400')}
+        ${statCard('Parser Needed', s.parser_needed, 'text-red-400')}
+        ${statCard('Parsers Loaded', s.parsers_loaded, 'text-purple-400')}
+      </div>`
+
+    if (!cvData.has_sources) {
+      document.getElementById('cv-filters').classList.add('hidden')
+      document.getElementById('cv-table').innerHTML = `
+        <div class="bg-gray-900/50 border border-gray-800 rounded-lg p-6 text-center text-sm text-gray-500">
+          <p class="mb-2">No active sources synced yet.</p>
+          <p>Click <strong class="text-gray-300">Sync Live Sources</strong> to pull current dataSource.names from the data lake, then <strong class="text-gray-300">Load SDL Parsers</strong> to see coverage.</p>
+        </div>`
+      return
+    }
+
+    const filtersEl = document.getElementById('cv-filters')
+    filtersEl.classList.remove('hidden')
+    filtersEl.innerHTML = [
+      ['all',            'All'],
+      ['covered',        'Custom Parser'],
+      ['default_only',   'Default Parser Only'],
+      ['parser_needed',  'No Parser'],
+    ].map(([f,l]) => `<button onclick="cvSetFilter('${f}')" id="cvf-${f}"
+        class="px-3 py-1 text-xs rounded-full border border-gray-700 text-gray-400 hover:border-gray-500">${l}</button>`).join('')
+
+    if (cvData.synced_at) {
+      filtersEl.innerHTML += `<span class="text-xs text-gray-600 self-center ml-2">Synced ${new Date(cvData.synced_at).toLocaleTimeString()}</span>`
+    }
+
+    cvSetFilter(cvFilter)
+  } catch(e) {
+    document.getElementById('cv-table').innerHTML = '<p class="text-gray-600 text-sm">Failed to load coverage data.</p>'
+  }
+}
+
+function cvSetFilter(f) {
+  cvFilter = f
+  document.querySelectorAll('[id^="cvf-"]').forEach(b => {
+    const on = b.id === `cvf-${f}`
+    b.className = `px-3 py-1 text-xs rounded-full border transition-colors ${on ? 'bg-purple-700 border-purple-600 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500 cursor-pointer'}`
+  })
+  if (!cvData?.sources) return
+
+  const LABELS = { covered: 'Covered', parser_needed: 'Parser Needed' }
+  const STYLES  = { covered: 'bg-emerald-900/50 text-emerald-300 border-emerald-700', parser_needed: 'bg-red-900/50 text-red-300 border-red-700' }
+
+  const sources = cvData.sources.filter(s => {
+    if (f === 'all')           return true
+    if (f === 'parser_needed') return s.status === 'parser_needed'
+    if (f === 'default_only')  return s.status === 'covered' && s.parser === 'detected in data'
+    if (f === 'covered')       return s.status === 'covered' && s.parser !== 'detected in data'
+    return true
+  })
+
+  function missingFieldsCell(s) {
+    if (!s.missing_fields?.length) {
+      return s.rule_count
+        ? `<span class="text-emerald-600 text-xs">✓ All fields covered</span>`
+        : `<span class="text-gray-700 text-xs">—</span>`
+    }
+    const id = 'mf-' + s.source_name.replace(/[^a-z0-9]/gi, '_')
+    const chips = s.missing_fields.map(f =>
+      `<span class="px-1.5 py-0.5 bg-red-900/40 border border-red-800/60 rounded text-xs font-mono text-red-300">${esc(f)}</span>`
+    ).join(' ')
+    return `<div>
+      <button onclick="cvToggleMissing('${id}')"
+        class="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 transition-colors">
+        <span class="px-1.5 py-0.5 bg-red-900/40 border border-red-800/60 rounded font-semibold">${s.missing_fields.length}</span>
+        <span>field${s.missing_fields.length !== 1 ? 's' : ''} missing</span>
+        <span id="${id}-chevron" class="text-gray-600">▶</span>
+      </button>
+      <div id="${id}" class="hidden mt-1.5 flex flex-wrap gap-1">${chips}</div>
+    </div>`
+  }
+
+  function detectionsCell(s) {
+    if (s.rule_count) {
+      return `<span class="text-purple-400 font-medium">${s.rule_count}</span> rule${s.rule_count !== 1 ? 's' : ''}`
+    }
+    if (s.close_matches && s.close_matches.length) {
+      const hints = s.close_matches.map(m =>
+        `<span class="text-amber-400">${esc(m.library_name)}</span> <span class="text-gray-600">(${m.rule_count} rules)</span>`
+      ).join(', ')
+      return `<span class="text-gray-700">—</span> <span class="text-amber-600 text-xs" title="dataSource.name mismatch?">⚠ similar: ${hints}</span>`
+    }
+    return `<span class="text-gray-700">—</span>`
+  }
+
+  function parserCell(s) {
+    if (s.status === 'covered') {
+      return `<span class="text-emerald-400 font-medium">✓ Parsed</span>`
+    }
+    return `<span class="text-red-400 font-medium">✗ Not Parsed</span>`
+  }
+
+  document.getElementById('cv-table').innerHTML = sources.length === 0
+    ? '<p class="text-gray-600 text-sm">No sources match this filter.</p>'
+    : `<div class="overflow-x-auto"><table class="w-full text-sm">
+        <thead><tr class="text-left text-gray-500 border-b border-gray-800">
+          <th class="pb-2 pr-4 font-medium">Data Source</th>
+          <th class="pb-2 pr-4 font-medium">Events (7d)</th>
+          <th class="pb-2 pr-4 font-medium">Status</th>
+          <th class="pb-2 pr-4 font-medium">Parser</th>
+          <th class="pb-2 pr-4 font-medium">Detections</th>
+          <th class="pb-2 font-medium">Fields Missing</th>
+        </tr></thead>
+        <tbody>${sources.map(s => `
+          <tr class="border-b border-gray-800/50 hover:bg-gray-900/30">
+            <td class="py-2 pr-4 font-mono text-xs">
+              <a href="#/quality" onclick="queueQualitySource('${esc(s.source_name)}')"
+                class="text-gray-200 hover:text-purple-400 cursor-pointer transition-colors"
+                title="Open in Parser Quality">${esc(s.source_name)}</a>
+            </td>
+            <td class="py-2 pr-4 text-xs text-gray-400">${(s.event_count||0).toLocaleString()}</td>
+            <td class="py-2 pr-4"><span class="px-2 py-0.5 rounded text-xs border ${STYLES[s.status]||''}">${LABELS[s.status]||s.status}</span></td>
+            <td class="py-2 pr-4 text-xs">${parserCell(s)}</td>
+            <td class="py-2 pr-4 text-xs text-gray-400">${detectionsCell(s)}</td>
+            <td class="py-2 text-xs">${missingFieldsCell(s)}</td>
+          </tr>`).join('')}
+        </tbody></table></div>`
+}
+
+// ── Ingest ────────────────────────────────────────────────────────────────
+
+let igDays = 3
+let igHours = 1  // default to 1h view
+
+function renderIngest() {
+  const btns = [
+    {label:'1h', onclick:"igSetHours(1)", id:'ig-h1'},
+    ...([3,5,7].map(d => ({label:`${d}d`, onclick:`igSetDays(${d})`, id:`ig-d${d}`})))
+  ]
+  set(`<div class="p-8 max-w-6xl">
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-xl font-bold text-white">Ingest Dashboard</h1>
+        <p class="text-sm text-gray-400 mt-1">Event volume · cost projection · filter simulator</p>
+      </div>
+      <div class="flex gap-2">
+        ${btns.map(b=>`<button onclick="${b.onclick}" id="${b.id}"
+          class="px-3 py-1.5 text-xs rounded-lg border border-gray-700 text-gray-400 hover:border-gray-500">${b.label}</button>`).join('')}
+      </div>
+    </div>
+    <div id="ig-err"></div>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-5">
+      <div class="flex items-baseline gap-2 mb-4">
+        <h2 class="text-sm font-medium text-gray-300" id="ig-chart-title">Daily Event Volume</h2>
+        <span class="text-xs text-gray-600" id="ig-chart-sub">events ingested per day</span>
+      </div>
+      <div id="ig-chart"><p class="text-gray-600 text-sm">Loading…</p></div>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-5">
+      <h2 class="text-sm font-medium text-gray-300 mb-4">Top Sources</h2>
+      <div id="ig-sources"><p class="text-gray-600 text-sm">Loading…</p></div>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <div class="flex items-start justify-between gap-4 mb-3">
+        <div>
+          <h2 class="text-sm font-medium text-gray-300">Filter Simulator</h2>
+          <p class="text-xs text-gray-500 mt-0.5">Before writing an SDL exclusion filter, use this to see how many events and GB it would remove.</p>
+        </div>
+        <button onclick="toggleSimHelp()" class="shrink-0 text-xs text-purple-400 hover:text-purple-300 transition-colors">How does this work?</button>
+      </div>
+
+      <div id="sim-help" class="hidden mb-4 bg-gray-800/60 border border-gray-700/50 rounded-lg p-4 text-xs text-gray-400 space-y-2">
+        <p><span class="text-gray-200 font-medium">What it does:</span> Runs a live PowerQuery against your data lake to count how many events match a source and/or event type, then projects that number into estimated GB and monthly cost savings.</p>
+        <p><span class="text-gray-200 font-medium">When to use it:</span> You've spotted a noisy source in the Top Sources table above (e.g. a source sending millions of low-value events). Enter it here to quantify how much ingest you'd save by filtering it out before committing the change in the SentinelOne console.</p>
+        <p><span class="text-gray-200 font-medium">Source name:</span> Paste the exact value from the <em>dataSource.name</em> column in the Top Sources table — e.g. <code class="bg-gray-900 px-1 rounded">ActivityFeed</code>.</p>
+        <p><span class="text-gray-200 font-medium">Event type:</span> Optional. Narrow the filter to a specific event category (e.g. <code class="bg-gray-900 px-1 rounded">dns</code>, <code class="bg-gray-900 px-1 rounded">heartbeat</code>). Leave blank to simulate dropping the entire source.</p>
+        <p><span class="text-gray-200 font-medium">GB estimate:</span> Based on 0.5 GB per million events — adjust in code if your actual ratio differs.</p>
+        <p class="text-amber-400/80">⚠ This is a read-only simulation — no filters are created or applied automatically. Use the results to inform an exclusion filter you create manually in the SentinelOne console.</p>
+      </div>
+
+      <div class="flex gap-3 flex-wrap mb-4">
+        <input id="ig-src" placeholder="Source name — e.g. ActivityFeed"
+          class="flex-1 min-w-48 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-purple-600">
+        <input id="ig-evt" placeholder="Event type (optional)"
+          class="flex-1 min-w-48 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-purple-600">
+        <button onclick="igSimulate()" id="btn-sim"
+          class="px-4 py-2 text-sm bg-purple-700 hover:bg-purple-600 rounded-lg text-white transition-colors">Simulate</button>
+      </div>
+      <div id="ig-sim-result"></div>
+    </div>
+  </div>`)
+  igUpdateButtons()
+  igLoad()
+}
+
+function igUpdateButtons() {
+  const active = igHours ? `ig-h${igHours}` : `ig-d${igDays}`
+  ;[{id:'ig-h1'},{id:'ig-d3'},{id:'ig-d5'},{id:'ig-d7'}].forEach(({id}) => {
+    const b = document.getElementById(id)
+    if (!b) return
+    b.className = `px-3 py-1.5 text-xs rounded-lg border transition-colors ${id===active ? 'bg-purple-700 border-purple-600 text-white' : 'border-gray-700 text-gray-400 hover:border-gray-500'}`
+  })
+}
+
+function igSetDays(d) {
+  igDays = d; igHours = null
+  igUpdateButtons()
+  igLoad()
+}
+
+function igSetHours(h) {
+  igHours = h
+  igUpdateButtons()
+  igLoad()
+}
+
+async function igLoad() {
+  const spinner = `<p class="text-gray-500 text-sm animate-pulse">Querying data lake…</p>`
+  document.getElementById('ig-chart').innerHTML = spinner
+  document.getElementById('ig-sources').innerHTML = spinner
+
+  const sourcesUrl = igHours
+    ? `/api/ingest/top-sources?hours=${igHours}`
+    : `/api/ingest/top-sources?days=${igDays}`
+
+  const [dailyResult, sourcesResult] = await Promise.allSettled([
+    igHours ? Promise.resolve(null) : apiGet(`/api/ingest/daily-volume?days=${igDays}`),
+    apiGet(sourcesUrl)
+  ])
+
+  // Update chart title based on mode
+  const titleEl = document.getElementById('ig-chart-title')
+  const subEl   = document.getElementById('ig-chart-sub')
+  if (titleEl) titleEl.textContent = igHours ? 'Events by Source (Last 1h)' : 'Daily Event Volume'
+  if (subEl)   subEl.textContent   = igHours ? 'top sources · last hour'    : 'events ingested per day'
+
+  // Volume chart
+  if (igHours) {
+    // For 1h mode, render top-sources data as a by-source bar chart
+    if (sourcesResult.status === 'fulfilled') {
+      const data = sourcesResult.value?.data ?? []
+      const chartRows = data.slice(0, 12).map(r => ({
+        label: r['dataSource.name'] || r.name || 'unknown',
+        events: r.events || 0
+      }))
+      document.getElementById('ig-chart').innerHTML = chartRows.length
+        ? barChart(chartRows, 'label', 'events')
+        : `<p class="text-gray-500 text-sm">No data in this period.</p>`
+    } else {
+      document.getElementById('ig-chart').innerHTML = `<p class="text-red-400 text-sm">${esc(sourcesResult.reason?.message ?? 'Error')}</p>`
+    }
+  } else if (dailyResult.status === 'fulfilled') {
+    document.getElementById('ig-chart').innerHTML = barChart(dailyResult.value, 'date', 'events')
+  } else {
+    document.getElementById('ig-chart').innerHTML = `<p class="text-red-400 text-sm">${esc(dailyResult.reason?.message ?? 'Error')}</p>`
+  }
+
+  // Top sources table
+  if (sourcesResult.status === 'fulfilled') {
+    const data = sourcesResult.value?.data ?? []
+    const rows = data.map(r => {
+      const name = r['dataSource.name'] || r.name || 'unknown'
+      const evts = r.events || 0
+      return `<tr class="border-b border-gray-800/50">
+        <td class="py-2 font-mono text-xs text-gray-200">${esc(name)}</td>
+        <td class="py-2 text-right text-gray-300">${evts.toLocaleString()}</td>
+        <td class="py-2 text-right text-gray-400">${(evts/1e6*0.5).toFixed(3)}</td>
+      </tr>`
+    })
+    document.getElementById('ig-sources').innerHTML = rows.length ? `
+      <table class="w-full text-sm">
+        <thead><tr class="text-left text-gray-500 border-b border-gray-800">
+          <th class="pb-2 font-medium">Source</th>
+          <th class="pb-2 text-right font-medium">Events</th>
+          <th class="pb-2 text-right font-medium">Est. GB</th>
+        </tr></thead>
+        <tbody>${rows.join('')}</tbody>
+      </table>` : `<p class="text-gray-500 text-sm">No data in this period.</p>`
+  } else {
+    document.getElementById('ig-sources').innerHTML = `<p class="text-red-400 text-sm">${esc(sourcesResult.reason?.message ?? 'Error')}</p>`
+  }
+}
+
+function toggleSimHelp() {
+  const el = document.getElementById('sim-help')
+  el.classList.toggle('hidden')
+}
+
+async function igSimulate() {
+  setBtn('btn-sim', true)
+  try {
+    const r = await apiPost('/api/ingest/simulate-filter', {
+      source: document.getElementById('ig-src').value,
+      event_type: document.getElementById('ig-evt').value,
+      days: igDays, gb_per_million_events: 0.5
+    })
+    document.getElementById('ig-sim-result').innerHTML = `
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        ${statCard('Matched Events', (r.matched_events||0).toLocaleString(), 'text-purple-300')}
+        ${statCard(`Est. GB (${igDays}d)`, r.estimated_gb_period||0, 'text-purple-300')}
+        ${statCard('Proj. Monthly Events', (r.projected_monthly_events||0).toLocaleString(), 'text-purple-300')}
+        ${statCard('Proj. Monthly GB', r.projected_monthly_gb||0, 'text-purple-300')}
+      </div>`
+  } catch(e) {
+    document.getElementById('ig-sim-result').innerHTML = `<p class="text-red-400 text-sm">${esc(e.message)}</p>`
+  } finally { setBtn('btn-sim', false, 'Simulate') }
+}
+
+// ── Onboarding ────────────────────────────────────────────────────────────
+
+const PROMPT = `Onboard this log source for SentinelOne SDL. Please generate:
+1. An SDL parser skeleton in augmented-JSON format (/logParsers/ format)
+2. Field mappings from raw fields to the SDL common schema
+3. 2–3 starter STAR detection rules for common threats from this source type
+4. 5 parser test assertions (input line → expected field → expected value)
+
+Log source: [describe source, e.g. "Palo Alto PAN-OS firewall"]
+
+Raw log sample:
+[paste your log lines here]`
+
+function renderOnboarding() {
+  set(`<div class="p-8 max-w-3xl">
+    <div class="mb-8">
+      <h1 class="text-xl font-bold text-white">Onboarding Accelerator</h1>
+      <p class="text-sm text-gray-400 mt-1">Use Claude Code directly — no API key required</p>
+    </div>
+    <div class="space-y-4 mb-8">
+      ${obStep('1. Grab a log sample','Copy 10–50 representative lines from the new log source. Include edge cases — errors, different event types, varying field presence.')}
+      ${obStep('2. Paste into Claude Code','Open Claude Code and say "Onboard this log source for SentinelOne SDL" then paste the sample. Mention the source type if known.')}
+      ${obStep('3. Get your artefacts','Claude returns an SDL parser (augmented-JSON), field mappings to the SDL schema, starter STAR detection rules, and parser test assertions.')}
+      ${obStep('4. Deploy','Drop the parser JSON into your /logParsers/ path. Paste the STAR rules into the AI-SIEM rule editor. Run the test assertions to validate extraction.')}
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div class="px-4 py-2 border-b border-gray-800 flex items-center justify-between">
+        <span class="text-xs font-medium text-gray-400">Prompt template</span>
+        <button onclick="obCopy()" id="btn-copy" class="px-2 py-1 text-xs text-gray-400 hover:text-gray-200">Copy</button>
+      </div>
+      <pre class="p-4 text-xs text-gray-300 font-mono leading-relaxed whitespace-pre-wrap">${esc(PROMPT)}</pre>
+    </div>
+  </div>`)
+}
+
+function obStep(title, desc) {
+  return `<div class="flex gap-4 bg-gray-900 border border-gray-800 rounded-xl p-4">
+    <div class="w-8 h-8 shrink-0 rounded-lg bg-purple-900/60 flex items-center justify-center text-purple-300 text-xs mt-0.5">→</div>
+    <div>
+      <div class="text-sm font-medium text-white">${esc(title)}</div>
+      <div class="text-sm text-gray-400 mt-1">${esc(desc)}</div>
+    </div>
+  </div>`
+}
+
+function obCopy() {
+  navigator.clipboard.writeText(PROMPT)
+  const b = document.getElementById('btn-copy')
+  if (b) { b.textContent = 'Copied!'; setTimeout(() => b.textContent = 'Copy', 1500) }
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────
+
+async function renderSettings() {
+  set(`<div class="p-6 max-w-2xl mx-auto space-y-6">
+    <h1 class="text-xl font-bold text-white">Settings</h1>
+    <div id="st-content"><p class="text-gray-500 text-sm">Loading…</p></div>
+  </div>`)
+  try {
+    const { fields, env_file_exists, env_file_path } = await apiGet('/api/settings/config')
+    renderSettingsForm(fields, env_file_exists, env_file_path)
+  } catch(e) {
+    document.getElementById('st-content').innerHTML = `<p class="text-red-400 text-sm">${esc(e.message)}</p>`
+  }
+}
+
+function renderSettingsForm(fields, envExists, envPath) {
+  const setupBanner = !envExists ? `
+    <div class="bg-blue-950/60 border border-blue-700/50 rounded-lg p-4 text-sm mb-4">
+      <p class="font-semibold text-blue-300 mb-2">⚡ First-time setup</p>
+      <p class="text-blue-200/80 mb-3">No <code class="bg-gray-900 px-1 rounded">.env</code> file found. Create one from the template to get started:</p>
+      <div class="bg-gray-900 rounded p-3 font-mono text-xs text-green-300 space-y-1">
+        <div><span class="text-gray-500"># in your project directory:</span></div>
+        <div>cp .env.example .env</div>
+        <div><span class="text-gray-500"># edit .env with your credentials, then:</span></div>
+        <div>docker-compose up -d --build</div>
+      </div>
+    </div>` : ''
+
+  const fieldRows = fields.map(f => `
+    <div class="space-y-1">
+      <label class="block text-xs font-medium text-gray-400 uppercase tracking-wide">${esc(f.label)}</label>
+      <div class="flex gap-2">
+        ${f.type === 'select' ? `
+        <select id="st-${f.key}" data-key="${f.key}" data-secret="false"
+          class="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-purple-500">
+          ${(f.options||[]).map(o => `<option value="${esc(o)}" ${f.value===o?'selected':''}>${esc(o)}</option>`).join('')}
+        </select>` : `
+        <input
+          id="st-${f.key}"
+          type="${f.secret ? 'password' : 'text'}"
+          placeholder="${esc(f.value || f.placeholder)}"
+          value=""
+          data-key="${f.key}"
+          data-secret="${f.secret}"
+          class="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-purple-500 font-${f.secret ? 'mono' : 'sans'}"
+        >
+        ${f.secret ? `<button onclick="toggleSecret('st-${f.key}')" class="px-3 py-2 rounded-lg border border-gray-700 text-gray-400 hover:text-gray-100 text-xs hover:border-gray-500 transition-colors">Show</button>` : ''}`}
+      </div>
+      ${f.hint ? `<p class="text-xs text-gray-600">${esc(f.hint)}</p>` : ''}
+      ${f.type !== 'select' ? (f.set ? `<p class="text-xs text-gray-600">Currently set${f.secret ? ' (masked)' : ': ' + esc(f.value)}</p>` : `<p class="text-xs text-amber-600">Not configured</p>`) : ''}
+    </div>`).join('')
+
+  document.getElementById('st-content').innerHTML = `
+    ${setupBanner}
+
+    <div class="bg-gray-900/50 border border-gray-800 rounded-lg p-5 space-y-5">
+      <div class="flex items-center justify-between">
+        <h2 class="font-semibold text-white text-sm">Environment Configuration</h2>
+        <span class="text-xs text-gray-500 font-mono">${esc(envPath)}</span>
+      </div>
+      <p class="text-xs text-gray-500">Leave a field blank to keep its current value. Changes are written to <code class="bg-gray-800 px-1 rounded">.env</code> and take effect after restarting the backend (<code class="bg-gray-800 px-1 rounded">docker-compose up -d --build backend</code>).</p>
+      <div class="space-y-4">${fieldRows}</div>
+      <div class="flex items-center gap-3 pt-2">
+        <button onclick="saveSettings()" id="st-save" class="px-4 py-2 bg-purple-700 hover:bg-purple-600 rounded-lg text-sm font-medium text-white transition-colors">Save to .env</button>
+        <span id="st-msg" class="text-sm"></span>
+      </div>
+    </div>
+
+    <div class="bg-gray-900/50 border border-gray-800 rounded-lg p-5 space-y-3">
+      <h2 class="font-semibold text-white text-sm">Manual Setup</h2>
+      <p class="text-xs text-gray-400">Prefer editing the file directly? Copy the template and fill in your credentials:</p>
+      <div class="bg-gray-950 rounded-lg p-4 font-mono text-xs text-gray-300 space-y-1">
+        <div><span class="text-gray-600"># 1. Copy the template</span></div>
+        <div class="text-green-400">cp .env.example .env</div>
+        <div class="mt-2"><span class="text-gray-600"># 2. Open and edit</span></div>
+        <div class="text-green-400">nano .env</div>
+        <div class="mt-2"><span class="text-gray-600"># 3. Rebuild & restart</span></div>
+        <div class="text-green-400">docker-compose up -d --build</div>
+      </div>
+      <div class="pt-1 space-y-1 text-xs text-gray-500">
+        <p><span class="text-gray-400 font-medium">S1_BASE_URL / S1_API_TOKEN</span> — SentinelOne console URL and service user API token. Generate the token at <span class="text-gray-400">Settings → Users → Service Users</span>.</p>
+        <p><span class="text-gray-400 font-medium">SDL_XDR_URL / SDL_LOG_READ_KEY</span> — Singularity Data Lake credentials for PowerQuery. Found at <span class="text-gray-400">Settings → Integrations → Data Lake API Keys</span>.</p>
+        <p><span class="text-gray-400 font-medium">ANTHROPIC_API_KEY</span> — Optional. Required only for the Onboarding AI assistant. Get it at <span class="text-gray-400">console.anthropic.com</span>.</p>
+      </div>
+    </div>`
+}
+
+function toggleSecret(id) {
+  const el = document.getElementById(id)
+  const btn = el.nextElementSibling
+  if (el.type === 'password') { el.type = 'text';  btn.textContent = 'Hide' }
+  else                        { el.type = 'password'; btn.textContent = 'Show' }
+}
+
+async function saveSettings() {
+  const updates = {}
+  document.querySelectorAll('[data-key]').forEach(el => {
+    // Always save select fields; only save text/password inputs when non-empty
+    if (el.tagName === 'SELECT' || el.value.trim()) updates[el.dataset.key] = el.value.trim()
+  })
+  if (!Object.keys(updates).length) {
+    document.getElementById('st-msg').innerHTML = '<span class="text-gray-400">Nothing to save — fill in at least one field.</span>'
+    return
+  }
+  setBtn('st-save', true)
+  try {
+    const r = await apiPost('/api/settings/config', { updates })
+    document.getElementById('st-msg').innerHTML =
+      `<span class="text-green-400">✓ Saved ${r.saved.length} value${r.saved.length!==1?'s':''}. Restart the backend to apply: <code class="bg-gray-800 px-1 rounded text-xs">docker-compose up -d --build backend</code></span>`
+    document.querySelectorAll('[data-key]').forEach(el => el.value = '')
+  } catch(e) {
+    document.getElementById('st-msg').innerHTML = `<span class="text-red-400">${esc(e.message)}</span>`
+  } finally { setBtn('st-save', false, 'Save to .env') }
+}
+
+// ── Parser Quality ────────────────────────────────────────────────────────
+
+function renderQuality() {
+  set(`<div class="p-8 max-w-5xl space-y-6">
+    <div>
+      <h1 class="text-xl font-bold text-white">Parser Quality</h1>
+      <p class="text-sm text-gray-400 mt-1">Inspect live events · measure field coverage · test parser patterns</p>
+    </div>
+
+    <!-- Live Event Sampler -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <h2 class="text-sm font-semibold text-white mb-1">Live Event Sampler</h2>
+      <p class="text-xs text-gray-500 mb-4">Pull recent raw events from a source and see exactly which fields landed — and which are missing.</p>
+      <div class="flex gap-3 flex-wrap mb-4">
+        <select id="qs-source" class="flex-1 min-w-60 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-purple-600">
+          <option value="">— loading sources… —</option>
+        </select>
+        <select id="qs-hours" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-purple-600">
+          <option value="1">Last 1h</option>
+          <option value="6">Last 6h</option>
+          <option value="24" selected>Last 24h</option>
+          <option value="72">Last 3d</option>
+          <option value="168">Last 7d</option>
+        </select>
+        <select id="qs-limit" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-purple-600">
+          <option value="10" selected>10 events</option>
+          <option value="20">20 events</option>
+          <option value="50">50 events</option>
+        </select>
+        <button onclick="qsSample()" id="btn-qs"
+          class="px-4 py-2 text-sm bg-purple-700 hover:bg-purple-600 rounded-lg text-white transition-colors">Sample</button>
+      </div>
+      <div id="qs-result"></div>
+    </div>
+
+    <!-- Field Population Rate -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <h2 class="text-sm font-semibold text-white mb-1">Field Population Rate</h2>
+      <p class="text-xs text-gray-500 mb-4">Sample up to 500 events and measure what % have each key field populated. Low rates flag parser extraction failures.</p>
+      <div class="flex gap-3 flex-wrap mb-3">
+        <select id="qp-source" onchange="qpDiscoverFields()" class="flex-1 min-w-60 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-purple-600">
+          <option value="">— loading sources… —</option>
+        </select>
+        <select id="qp-hours" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-purple-600">
+          <option value="1">Last 1h</option>
+          <option value="6">Last 6h</option>
+          <option value="24" selected>Last 24h</option>
+          <option value="72">Last 3d</option>
+          <option value="168">Last 7d</option>
+        </select>
+        <button onclick="qpAnalyze()" id="btn-qp"
+          class="px-4 py-2 text-sm bg-purple-700 hover:bg-purple-600 rounded-lg text-white transition-colors">Analyze</button>
+      </div>
+      <div class="mb-3">
+        <label class="text-xs text-gray-500 block mb-1">Fields to check <span class="text-gray-600">(comma-separated)</span></label>
+        <input id="qp-fields" value="src.ip,dst.ip,user.name,event.type,src.process.name,src.process.cmdline,tgt.file.path,network.direction"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-300 font-mono focus:outline-none focus:border-purple-600">
+      </div>
+      <div id="qp-result"></div>
+    </div>
+
+    <!-- Parser Test Runner -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <h2 class="text-sm font-semibold text-white mb-1">Parser Test Runner</h2>
+      <p class="text-xs text-gray-500 mb-4">Paste a raw log line and pick a loaded parser — see which fields the format patterns would extract without deploying anything.</p>
+      <div class="flex gap-3 flex-wrap mb-3">
+        <select id="qt-parser" class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-purple-600">
+          <option value="">— select parser —</option>
+        </select>
+        <button onclick="qtTest()" id="btn-qt"
+          class="px-4 py-2 text-sm bg-purple-700 hover:bg-purple-600 rounded-lg text-white transition-colors">Test</button>
+      </div>
+      <textarea id="qt-log" rows="3" placeholder="Paste raw log line here…"
+        class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-300 font-mono placeholder-gray-600 focus:outline-none focus:border-purple-600 mb-3"></textarea>
+      <div id="qt-result"></div>
+    </div>
+  </div>`)
+  qtLoadParsers().then(() => {
+    // Pre-select source if navigated from Coverage Map or Overview
+    if (_pendingQualitySource) {
+      const src = _pendingQualitySource
+      _pendingQualitySource = null
+      const qsSel = document.getElementById('qs-source')
+      const qpSel = document.getElementById('qp-source')
+      if (qsSel) qsSel.value = src
+      if (qpSel) { qpSel.value = src; qpDiscoverFields() }
+    }
+  })
+}
+
+// ── Live Event Sampler ─────────────────────────────────────────────────────
+
+async function qsSample() {
+  const source = document.getElementById('qs-source').value
+  if (!source) { document.getElementById('qs-result').innerHTML = errBox('Select a source.'); return }
+  setBtn('btn-qs', true)
+  document.getElementById('qs-result').innerHTML = '<p class="text-gray-500 text-sm animate-pulse">Querying data lake…</p>'
+  try {
+    const r = await apiPost('/api/quality/sample-events', {
+      source,
+      limit: +document.getElementById('qs-limit').value,
+      hours: +document.getElementById('qs-hours').value,
+    })
+    if (!r.events?.length) {
+      document.getElementById('qs-result').innerHTML = '<p class="text-gray-500 text-sm">No events found for this source in the selected window.</p>'
+      return
+    }
+    // Collect all field names across events — pin message last for readability
+    const allFieldsRaw = [...new Set(r.events.flatMap(e => Object.keys(e)))].sort()
+    const allFields = [...allFieldsRaw.filter(f => f !== 'message'), ...allFieldsRaw.filter(f => f === 'message')]
+    const rows = r.events.map((ev, ri) => {
+      const cells = allFields.map(f => {
+        const v = ev[f]
+        const empty = v === null || v === undefined || v === '' || v === 'null'
+        const raw = String(v ?? '')
+        if (f === 'message' && !empty) {
+          return `<td class="py-1.5 px-2 text-xs font-mono text-gray-300 max-w-md">
+            <div class="flex items-start gap-1.5">
+              <span class="truncate flex-1" title="${esc(raw)}">${esc(raw.slice(0, 80))}${raw.length > 80 ? '…' : ''}</span>
+              <button onclick="qsCopyMsg(this, ${ri})" data-msg="${esc(raw).replace(/"/g, '&quot;')}"
+                class="shrink-0 px-1.5 py-0.5 rounded text-gray-600 hover:text-gray-200 hover:bg-gray-700 transition-colors text-xs leading-none"
+                title="Copy message">⎘</button>
+            </div>
+          </td>`
+        }
+        return `<td class="py-1.5 px-2 text-xs font-mono max-w-32 truncate ${empty ? 'text-gray-700 italic' : 'text-gray-300'}" title="${esc(raw)}">${empty ? '∅' : esc(raw.slice(0,40))}</td>`
+      }).join('')
+      return `<tr class="border-b border-gray-800/40 hover:bg-gray-800/20">${cells}</tr>`
+    }).join('')
+    const headers = allFields.map(f => `<th class="pb-2 px-2 text-left font-medium whitespace-nowrap text-xs">${esc(f)}</th>`).join('')
+    document.getElementById('qs-result').innerHTML = `
+      <p class="text-xs text-gray-500 mb-2">${r.count} events · ${r.hours}h window · ${allFields.length} fields seen</p>
+      <div class="overflow-x-auto max-h-72 overflow-y-auto rounded border border-gray-800">
+        <table class="text-xs min-w-full">
+          <thead class="sticky top-0 bg-gray-900 text-gray-500 border-b border-gray-800"><tr>${headers}</tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`
+  } catch(e) {
+    document.getElementById('qs-result').innerHTML = errBox(e.message)
+  } finally { setBtn('btn-qs', false, 'Sample') }
+}
+
+function qsCopyMsg(btn, idx) {
+  const msg = btn.dataset.msg
+  navigator.clipboard.writeText(msg).then(() => {
+    const orig = btn.textContent
+    btn.textContent = '✓'
+    btn.classList.add('text-emerald-400')
+    setTimeout(() => { btn.textContent = orig; btn.classList.remove('text-emerald-400') }, 1500)
+  })
+}
+
+// ── Field Population Rate ──────────────────────────────────────────────────
+
+const QP_SDL_DEFAULTS = [
+  'src.ip','dst.ip','src.port','dst.port','user.name',
+  'event.type','src.process.name','src.process.cmdline',
+  'tgt.file.path','network.direction'
+]
+
+async function qpDiscoverFields() {
+  const source = document.getElementById('qp-source').value
+  if (!source) return
+  const fieldsEl = document.getElementById('qp-fields')
+  fieldsEl.placeholder = 'Discovering fields…'
+  fieldsEl.value = ''
+  try {
+    const r = await apiPost('/api/quality/sample-events', { source, limit: 20, hours: 24 })
+    const seen = [...new Set(r.events.flatMap(e => Object.keys(e)))]
+      .filter(f => f !== 'timestamp')  // skip metadata-only fields
+      .sort()
+    // Merge log fields with SDL defaults, log fields first
+    const merged = [...new Set([...seen, ...QP_SDL_DEFAULTS])]
+    fieldsEl.value = merged.join(', ')
+  } catch {
+    fieldsEl.value = QP_SDL_DEFAULTS.join(', ')
+  }
+  fieldsEl.placeholder = ''
+}
+
+async function qpAnalyze() {
+  const source = document.getElementById('qp-source').value
+  if (!source) { document.getElementById('qp-result').innerHTML = errBox('Select a source.'); return }
+  setBtn('btn-qp', true)
+  document.getElementById('qp-result').innerHTML = '<p class="text-gray-500 text-sm animate-pulse">Sampling events…</p>'
+  try {
+    const fieldsRaw = document.getElementById('qp-fields').value
+    const fields = fieldsRaw.split(',').map(f => f.trim()).filter(Boolean)
+    const r = await apiPost('/api/quality/field-population', {
+      source, hours: +document.getElementById('qp-hours').value, fields
+    })
+    const rows = r.fields.map(f => {
+      const pct = f.rate
+      const color = pct >= 80 ? 'bg-emerald-500' : pct >= 40 ? 'bg-amber-500' : 'bg-red-500'
+      const textColor = pct >= 80 ? 'text-emerald-400' : pct >= 40 ? 'text-amber-400' : 'text-red-400'
+      return `<tr class="border-b border-gray-800/40">
+        <td class="py-2 pr-4 font-mono text-xs text-gray-200">${esc(f.field)}</td>
+        <td class="py-2 pr-4 text-xs ${textColor} font-semibold w-16">${pct}%</td>
+        <td class="py-2 pr-4 w-48">
+          <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
+            <div class="h-full ${color} rounded-full transition-all" style="width:${pct}%"></div>
+          </div>
+        </td>
+        <td class="py-2 text-xs text-gray-600">${f.populated.toLocaleString()} / ${f.total.toLocaleString()}</td>
+      </tr>`
+    }).join('')
+    document.getElementById('qp-result').innerHTML = `
+      <p class="text-xs text-gray-500 mb-3">${r.total_sampled} events sampled · ${r.hours}h window — sorted by worst coverage first</p>
+      <table class="w-full mb-4">
+        <thead><tr class="text-left text-gray-500 border-b border-gray-800">
+          <th class="pb-2 pr-4 text-xs font-medium">Field</th>
+          <th class="pb-2 pr-4 text-xs font-medium">Rate</th>
+          <th class="pb-2 pr-4 text-xs font-medium">Coverage</th>
+          <th class="pb-2 text-xs font-medium">Events</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      ${r.fields_seen_in_sample?.length ? `
+        <div class="border-t border-gray-800 pt-3">
+          <p class="text-xs text-gray-500 mb-1">Fields actually present in sample <span class="text-gray-600">(${r.fields_seen_in_sample.length} total)</span></p>
+          <div class="flex flex-wrap gap-1">${r.fields_seen_in_sample.map(f =>
+            `<span class="px-2 py-0.5 bg-gray-800 rounded text-xs font-mono text-gray-400">${esc(f)}</span>`).join('')}
+          </div>
+        </div>` : ''}`
+  } catch(e) {
+    document.getElementById('qp-result').innerHTML = errBox(e.message)
+  } finally { setBtn('btn-qp', false, 'Analyze') }
+}
+
+// ── Parser Test Runner ─────────────────────────────────────────────────────
+
+async function qtLoadParsers() {
+  try {
+    const r = await apiGet('/api/coverage/map')
+    const sources = (r.sources || []).sort((a, b) => b.event_count - a.event_count)
+    const parserNames = [...new Set(sources.map(s => s.parser).filter(p => p && p !== 'detected in data'))].sort()
+
+    // Populate source dropdowns
+    const sourcePlaceholder = '<option value="">— select a source —</option>'
+    const sourceOptions = sources.map(s =>
+      `<option value="${esc(s.source_name)}">${esc(s.source_name)} (${(s.event_count||0).toLocaleString()} events)</option>`
+    ).join('')
+
+    const qsSel = document.getElementById('qs-source')
+    const qpSel = document.getElementById('qp-source')
+    if (qsSel) qsSel.innerHTML = sourcePlaceholder + sourceOptions
+    if (qpSel) qpSel.innerHTML = sourcePlaceholder + sourceOptions
+
+    // Populate parser dropdown from /app/parsers/ directory (not from coverage map)
+    const qtSel = document.getElementById('qt-parser')
+    if (qtSel) {
+      try {
+        const p = await apiGet('/api/quality/parsers')
+        qtSel.innerHTML = '<option value="">— select parser —</option>'
+        ;(p.parsers || []).forEach(n => {
+          const o = document.createElement('option'); o.value = n; o.textContent = n; qtSel.appendChild(o)
+        })
+        if (!p.parsers || p.parsers.length === 0) {
+          qtSel.innerHTML = '<option value="">— no parser files in /app/parsers — drop JSON files there or click "Load SDL Parsers" —</option>'
+        }
+      } catch (err) {
+        qtSel.innerHTML = '<option value="">— could not load parsers: ' + esc(err.message || err) + ' —</option>'
+      }
+    }
+  } catch(e) {
+    // If no sources synced yet, fall back to empty state with hint
+    const hint = '<option value="">— sync sources on Coverage Map first —</option>'
+    const qsSel = document.getElementById('qs-source')
+    const qpSel = document.getElementById('qp-source')
+    if (qsSel) qsSel.innerHTML = hint
+    if (qpSel) qpSel.innerHTML = hint
+  }
+}
+
+async function qtTest() {
+  const parser = document.getElementById('qt-parser').value
+  const log = document.getElementById('qt-log').value.trim()
+  if (!parser) { document.getElementById('qt-result').innerHTML = errBox('Select a parser.'); return }
+  if (!log) { document.getElementById('qt-result').innerHTML = errBox('Paste a log line.'); return }
+  setBtn('btn-qt', true)
+  document.getElementById('qt-result').innerHTML = '<p class="text-gray-500 text-sm animate-pulse">Testing…</p>'
+  try {
+    const r = await apiPost('/api/quality/test-parser', { parser_name: parser, log_line: log })
+    if (!r.matched) {
+      document.getElementById('qt-result').innerHTML = `
+        <div class="p-3 bg-amber-900/30 border border-amber-700/50 rounded-lg text-sm text-amber-300">
+          ⚠ ${esc(r.message || 'No format pattern matched this log line.')}
+          <p class="text-xs text-amber-500 mt-1">The parser's format strings didn't produce a match. Check that the log sample matches the expected format, or that the parser uses grok/dottedJson which aren't tested here.</p>
+        </div>`
+      return
+    }
+    const extracts = (r.fields || []).filter(f => f.source !== 'rewrite')
+    const rewrites = (r.fields || []).filter(f => f.source === 'rewrite')
+    const rowsExtract = extracts.map(f => `<tr class="border-b border-gray-800/40">
+      <td class="py-1.5 pr-4 font-mono text-xs text-purple-300">${esc(f.field)}</td>
+      <td class="py-1.5 font-mono text-xs text-gray-200">${esc(String(f.value))}</td>
+    </tr>`).join('')
+    const rowsRewrite = rewrites.map(f => `<tr class="border-b border-gray-800/40">
+      <td class="py-1.5 pr-4 font-mono text-xs text-emerald-300">${esc(f.field)}</td>
+      <td class="py-1.5 font-mono text-xs text-gray-200">${esc(String(f.value))}</td>
+    </tr>`).join('')
+    const modeBadge = r.mode === 'json'
+      ? '<span class="px-2 py-0.5 ml-2 text-xs rounded bg-purple-900/60 border border-purple-700 text-purple-300">JSON auto-extract</span>'
+      : '<span class="px-2 py-0.5 ml-2 text-xs rounded bg-blue-900/60 border border-blue-700 text-blue-300">regex format</span>'
+    const counts = r.mode === 'json'
+      ? `<span class="text-gray-500">${r.extracted_count} extracted · ${r.derived_count} rewritten` +
+        (r.payload_count > 1 ? ` · showing payload ${r.showing_payload}/${r.payload_count}` : '') +
+        `</span>` : ''
+    const parseWarn = (r.parse_errors && r.parse_errors.length)
+      ? `<div class="mt-2 p-2 bg-amber-900/30 border border-amber-700/50 rounded text-xs text-amber-300">
+           ${r.parse_errors.length} line(s) skipped: ${r.parse_errors.slice(0,3).map(esc).join(' | ')}${r.parse_errors.length>3?' …':''}
+         </div>` : ''
+    document.getElementById('qt-result').innerHTML = `
+      <div class="mb-3 p-2 bg-gray-800/60 rounded text-xs text-gray-500 font-mono break-all">
+        <span class="text-gray-600">Matched format: </span>${esc(r.format_matched)} ${modeBadge}
+        <div class="mt-1">${counts}</div>
+        ${parseWarn}
+      </div>
+      <table class="w-full mb-4">
+        <thead><tr class="text-left text-gray-500 border-b border-gray-800">
+          <th class="pb-2 pr-4 text-xs font-medium">Extracted Field</th>
+          <th class="pb-2 text-xs font-medium">Value</th>
+        </tr></thead>
+        <tbody>${rowsExtract}</tbody>
+      </table>
+      ${rewrites.length ? `
+      <h4 class="text-xs font-semibold text-emerald-300 mb-2">Derived (rewrites applied — ${rewrites.length})</h4>
+      <table class="w-full">
+        <thead><tr class="text-left text-gray-500 border-b border-gray-800">
+          <th class="pb-2 pr-4 text-xs font-medium">Output Field</th>
+          <th class="pb-2 text-xs font-medium">Value</th>
+        </tr></thead>
+        <tbody>${rowsRewrite}</tbody>
+      </table>` : ''}`
+  } catch(e) {
+    document.getElementById('qt-result').innerHTML = errBox(e.message)
+  } finally { setBtn('btn-qt', false, 'Test') }
+}
+
+// ── Router ────────────────────────────────────────────────────────────────
+
+function set(html) { document.getElementById('main').innerHTML = html }
+
+function updateNav(page) {
+  document.querySelectorAll('.nav-link').forEach(el => {
+    const on = el.dataset.page === page
+    el.className = `nav-link flex items-center px-3 py-2 rounded-lg text-sm cursor-pointer transition-colors ${on ? 'bg-purple-700 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-gray-100'}`
+  })
+}
+
+function route() {
+  const h = location.hash || '#/'
+  if      (h === '#/coverage')   { updateNav('coverage');   renderCoverage()   }
+  else if (h === '#/ingest')     { updateNav('ingest');     renderIngest()     }
+  else if (h === '#/quality')    { updateNav('quality');    renderQuality()    }
+  else if (h === '#/onboarding') { updateNav('onboarding'); renderOnboarding() }
+  else if (h === '#/settings')   { updateNav('settings');   renderSettings()   }
+  else                           { updateNav('home');       renderHome()       }
+}
+
+window.addEventListener('hashchange', route)
+route()
+</script>
+</body>
+</html>
