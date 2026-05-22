@@ -1,0 +1,80 @@
+{
+  // OCSF-compliant parser for JSON application logs
+  // Schema: OCSF v1.3.0 - Security Finding (class_uid 2001)
+  // https://schema.ocsf.io/1.3.0/classes/security_finding
+
+  attributes: {
+    // ─── OCSF Metadata ──────────────────────────────────────────────
+    "metadata.version":             "1.3.0",
+    "metadata.product.vendor_name": "GenericApp",
+    "metadata.product.name":        "Application Logger",
+    "metadata.product.version":     "1.0.0",
+    "metadata.log_provider":        "hec",
+
+    // ─── OCSF Classification (Security Finding) ──────────────────────
+    "category_uid":                 2,
+    "category_name":                "Findings",
+    "class_uid":                    2001,
+    "class_name":                   "Security Finding",
+    "activity_id":                  1,
+    "activity_name":                "Create",
+    "type_uid":                     200101,
+    "type_name":                    "Security Finding: Create",
+
+    // ─── OCSF Finding state defaults (overridable via rewrites) ─────
+    "status_id":                    1,             // 1=New
+    "status":                       "New",
+    "disposition_id":               0,             // 0=Unknown
+    "disposition":                  "Unknown",
+
+    // ─── SDL/S1 routing fields (non-OCSF) ───────────────────────────
+    "Category":                     "security",
+    "dataSource.vendor":            "GenericApp",
+    "dataSource.name":              "alert",
+    "dataSource.category":          "security",
+    "finding_info.types":           ["Authentication"]
+  },
+
+  formats: [
+    {
+      // Auto-extract every JSON top-level field as an attribute
+      format: "$=json{parse=json}$",
+      halt: true,
+      rewrites: [
+        // ─── Time handling ─────────────────────────────────────────────
+        // Source JSON uses `event_iso` (ISO string). NEVER use the bare
+        // `time` attr (SDL reserved, expects epoch ms) or any `*_time`
+        // suffix (AI SIEM auto-parses as date, shows "Invalid Date" for
+        // ISO strings).
+        { input: "event_iso", output: "finding_info.created_time_dt", match: ".*", replace: "$0" },
+
+        // ─── Actor (user) ───────────────────────────────────────────
+        { input: "user", output: "actor.user.name", match: ".*", replace: "$0" },
+        { input: "user", output: "actor.user.uid",  match: ".*", replace: "$0" },
+
+        // ─── Finding info ───────────────────────────────────────────
+        { input: "msg", output: "finding_info.title", match: ".*", replace: "$0" },
+        { input: "msg", output: "finding_info.desc",  match: ".*", replace: "$0" },
+        // finding_info.uid: use the original log line hash; SDL has no hash fn,
+        // so fall back to msg+user concatenation (callers SHOULD add an `id` field)
+        { input: "msg", output: "finding_info.uid",   match: ".*", replace: "$0" },
+
+        // ─── Raw log preservation (OCSF: raw_data) ──────────────────
+        { input: "msg", output: "raw_data",           match: ".*", replace: "$0" },
+
+        // ─── Severity (string + int, OCSF v1.3.0 ranges) ────────────
+        // NOTE: SDL reserves the bare `severity` field name and renames our
+        // attribute to `severity_`. We populate `severity_str` (queryable) and
+        // `severity_id` (OCSF integer 0-6).
+        { input: "level", output: "severity_id",  match: "(?i)error",  replace: "5" },
+        { input: "level", output: "severity_id",  match: "(?i)warn",   replace: "4" },
+        { input: "level", output: "severity_id",  match: "(?i)info",   replace: "3" },
+        { input: "level", output: "severity_id",  match: "(?i)debug",  replace: "1" },
+        { input: "level", output: "severity_str", match: "(?i)error",  replace: "Critical" },
+        { input: "level", output: "severity_str", match: "(?i)warn",   replace: "High" },
+        { input: "level", output: "severity_str", match: "(?i)info",   replace: "Informational" },
+        { input: "level", output: "severity_str", match: "(?i)debug",  replace: "Other" }
+      ]
+    }
+  ]
+}

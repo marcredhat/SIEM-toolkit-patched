@@ -1,0 +1,160 @@
+{
+  "duration": "24h",
+  "description": "MITRE ATT&CK technique coverage from OCSF detections",
+  "graphs": [
+    {
+      "title": "MITRE ATT&CK Coverage",
+      "graphStyle": "markdown",
+      "markdown": "## MITRE ATT&CK Technique Counters\\n\\nEach panel shows the count of events matching a specific MITRE technique pattern.\\n\\n| Technique | Description | Detection Pattern |\\n|---|---|---|\\n| T1110 | Brute Force | Failed password attempts |\\n| T1046 | Network Scanning | Firewall denies to multiple ports |\\n| T1059 | Command Execution | bash -c, powershell -enc |\\n| T1078 | Valid Accounts | root/admin/SYSTEM usage |\\n| T1098 | Account Manipulation | useradd, GRANT |\\n| T1548 | Privilege Escalation | sudo, NOT in sudoers |",
+      "layout": {
+        "w": 60,
+        "h": 12,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "title": "T1110 - Brute Force",
+      "graphStyle": "number",
+      "query": "serverHost contains 'ocsf' (message contains 'Failed password' or message contains 'authentication failure') | group count() | limit 1",
+      "layout": {
+        "w": 15,
+        "h": 7,
+        "x": 0,
+        "y": 12
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0"
+      }
+    },
+    {
+      "title": "T1046 - Network Scanning",
+      "graphStyle": "number",
+      "query": "serverHost contains 'ocsf' action = 'deny' | group count() | limit 1",
+      "layout": {
+        "w": 15,
+        "h": 7,
+        "x": 15,
+        "y": 12
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0"
+      }
+    },
+    {
+      "title": "T1059 - Command Execution",
+      "graphStyle": "number",
+      "query": "serverHost contains 'ocsf' (message contains 'bash -c' or message contains 'python -c' or message contains 'powershell -enc' or message contains 'cmd.exe /c') | group count() | limit 1",
+      "layout": {
+        "w": 15,
+        "h": 7,
+        "x": 30,
+        "y": 12
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0"
+      }
+    },
+    {
+      "title": "T1078 - Valid Accounts",
+      "graphStyle": "number",
+      "query": "serverHost contains 'ocsf' (user_name = 'root' or user_name = 'Administrator' or user_name = 'admin' or user_name = 'SYSTEM') | group count() | limit 1",
+      "layout": {
+        "w": 15,
+        "h": 7,
+        "x": 45,
+        "y": 12
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0"
+      }
+    },
+    {
+      "title": "T1098 - Account Manipulation",
+      "graphStyle": "number",
+      "query": "serverHost contains 'ocsf' (message contains 'useradd' or message contains 'usermod' or message contains 'GRANT' or message contains 'Add member') | group count() | limit 1",
+      "layout": {
+        "w": 15,
+        "h": 7,
+        "x": 0,
+        "y": 19
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0"
+      }
+    },
+    {
+      "title": "T1548 - Privilege Escalation",
+      "graphStyle": "number",
+      "query": "serverHost contains 'ocsf' (message contains 'sudo' or message contains 'NOT in sudoers') | group count() | limit 1",
+      "layout": {
+        "w": 15,
+        "h": 7,
+        "x": 15,
+        "y": 19
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0"
+      }
+    },
+    {
+      "title": "T1021 - Remote Services",
+      "graphStyle": "number",
+      "query": "serverHost contains 'ocsf' (dstport = 22 or dstport = 3389 or dstport = 5985) action = 'allow' | group count() | limit 1",
+      "layout": {
+        "w": 15,
+        "h": 7,
+        "x": 30,
+        "y": 19
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0"
+      }
+    },
+    {
+      "title": "T1136 - Create Account",
+      "graphStyle": "number",
+      "query": "serverHost contains 'ocsf' (message contains 'useradd' or message contains 'new user' or message contains 'CREATE USER') | group count() | limit 1",
+      "layout": {
+        "w": 15,
+        "h": 7,
+        "x": 45,
+        "y": 19
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0"
+      }
+    },
+    {
+      "title": "Detections Over Time",
+      "graphStyle": "stacked_bar",
+      "xAxis": "time",
+      "query": "serverHost contains 'ocsf' | group count() by timestamp=timebucket('1h'), serverHost | transpose serverHost on timestamp",
+      "layout": {
+        "w": 40,
+        "h": 14,
+        "x": 0,
+        "y": 26
+      }
+    },
+    {
+      "title": "Top Attacker IPs",
+      "graphStyle": "table",
+      "query": "src_ip = * serverHost contains 'ocsf' (message contains 'Failed' or message contains 'deny' or action = 'deny') | group hits=count() by src_ip | sort -hits | limit 10",
+      "layout": {
+        "w": 20,
+        "h": 14,
+        "x": 40,
+        "y": 26
+      }
+    }
+  ]
+}

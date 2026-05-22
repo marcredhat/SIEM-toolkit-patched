@@ -1,0 +1,163 @@
+// SentinelOne AI SIEM Parser: Microsoft DHCP Server
+// OCSF Schema Version: 1.1.0
+// Maps Microsoft DHCP CSV logs to OCSF classes
+// Primary Class: DHCP Activity (4004)
+
+{
+  "parserName": "MicrosoftDHCP-OCSF",
+  "version": "1.0.0",
+  "vendor": "Microsoft",
+  "product": "DHCP Server",
+  "format": "csv",
+  "hasHeader": true,
+  
+  "patterns": [
+    // DHCP Lease events (Assign, Renew, Release)
+    {
+      "pattern": "^(10|11|12|17|20),",
+      "rewrites": [
+        {"set": "class_uid", "value": "4004"},
+        {"set": "class_name", "value": "DHCP Activity"},
+        {"set": "category_uid", "value": "4"},
+        {"set": "category_name", "value": "Network Activity"},
+        
+        // Metadata
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Microsoft DHCP"},
+        {"set": "metadata.product.vendor_name", "value": "Microsoft"},
+        {"csv": "TransactionID", "to": "metadata.uid"},
+        {"csv": "CorrelationID", "to": "metadata.correlation_uid"},
+        
+        // Time
+        {"concat": ["$Date", " ", "$Time"], "to": "time"},
+        
+        // Event ID mapping
+        {"csv": "ID", "to": "event_id"},
+        {"lookup": "event_id", "map": {
+          "10": 1, "11": 2, "12": 3, "13": 4, "14": 5,
+          "15": 6, "16": 7, "17": 8, "20": 9
+        }, "to": "activity_id"},
+        {"lookup": "event_id", "map": {
+          "10": "Assign", "11": "Renew", "12": "Release",
+          "13": "DNS Update Request", "14": "DNS Update Successful",
+          "15": "NACK", "16": "Decline", "17": "Expired", "20": "BOOTP Assign"
+        }, "to": "activity_name"},
+        
+        // Description
+        {"csv": "Description", "to": "message"},
+        
+        // Lease info
+        {"csv": "IP Address", "to": "lease.ip"},
+        {"csv": "Host Name", "to": "lease.hostname"},
+        {"csv": "MAC Address", "to": "lease.mac"},
+        
+        // Device
+        {"csv": "IP Address", "to": "device.ip"},
+        {"csv": "Host Name", "to": "device.hostname"},
+        {"csv": "MAC Address", "to": "device.mac"},
+        
+        // User (if available)
+        {"csv": "User Name", "to": "user.name"},
+        
+        // DHCP identifiers
+        {"csv": "Dhcid", "to": "dhcp.client_id"},
+        {"csv": "VendorClass(ASCII)", "to": "dhcp.vendor_class"},
+        {"csv": "UserClass(ASCII)", "to": "dhcp.user_class"},
+        {"csv": "RelayAgentInformation", "to": "dhcp.relay_agent"},
+        
+        // Status based on event
+        {"set": "status_id", "value": "1", "if": "ID:(10|11|13|14|20)"},
+        {"set": "status", "value": "Success", "if": "ID:(10|11|13|14|20)"},
+        {"set": "status_id", "value": "2", "if": "ID:(15|16|30)"},
+        {"set": "status", "value": "Failure", "if": "ID:(15|16|30)"}
+      ]
+    },
+    
+    // DNS Update events
+    {
+      "pattern": "^(13|14|30|31),",
+      "rewrites": [
+        {"set": "class_uid", "value": "4003"},
+        {"set": "class_name", "value": "DNS Activity"},
+        {"set": "category_uid", "value": "4"},
+        {"set": "category_name", "value": "Network Activity"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Microsoft DHCP"},
+        {"set": "metadata.product.vendor_name", "value": "Microsoft"},
+        
+        // Time
+        {"concat": ["$Date", " ", "$Time"], "to": "time"},
+        
+        // Activity
+        {"csv": "ID", "to": "event_id"},
+        {"lookup": "event_id", "map": {
+          "13": 1, "14": 1, "30": 2, "31": 1
+        }, "to": "activity_id"},
+        {"lookup": "event_id", "map": {
+          "13": "DNS Update Request", "14": "DNS Update Successful",
+          "30": "DNS Update Failed", "31": "DNS Update Request"
+        }, "to": "activity_name"},
+        
+        // DNS info
+        {"csv": "Host Name", "to": "query_info.hostname"},
+        {"csv": "IP Address", "to": "answers.rdata"},
+        
+        // Status
+        {"csv": "DnsRegError", "to": "status_code"},
+        {"set": "status_id", "value": "1", "if": "DnsRegError:0"},
+        {"set": "status", "value": "Success", "if": "DnsRegError:0"},
+        {"set": "status_id", "value": "2", "if": "DnsRegError:[^0]"},
+        {"set": "status", "value": "Failure", "if": "DnsRegError:[^0]"}
+      ]
+    },
+    
+    // NACK/Decline/Expired (potential issues)
+    {
+      "pattern": "^(15|16|17|32),",
+      "rewrites": [
+        {"set": "class_uid", "value": "4004"},
+        {"set": "class_name", "value": "DHCP Activity"},
+        {"set": "status_id", "value": "2"},
+        {"set": "status", "value": "Failure"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Microsoft DHCP"},
+        {"set": "metadata.product.vendor_name", "value": "Microsoft"},
+        
+        // Time
+        {"concat": ["$Date", " ", "$Time"], "to": "time"},
+        
+        // Event
+        {"csv": "ID", "to": "event_id"},
+        {"lookup": "event_id", "map": {
+          "15": "NACK", "16": "Decline", "17": "Expired", "32": "Deleted"
+        }, "to": "activity_name"},
+        
+        // Device
+        {"csv": "IP Address", "to": "device.ip"},
+        {"csv": "Host Name", "to": "device.hostname"},
+        {"csv": "MAC Address", "to": "device.mac"},
+        
+        // Severity for issues
+        {"set": "severity_id", "value": "2"},
+        {"set": "severity", "value": "Low"}
+      ]
+    }
+  ],
+  
+  "event_id_reference": {
+    "10": "New IP address leased to client",
+    "11": "Lease renewed by client",
+    "12": "Lease released by client",
+    "13": "DNS update request sent",
+    "14": "DNS update successful",
+    "15": "DHCP NACK sent to client",
+    "16": "DHCP Decline from client",
+    "17": "Lease expired and deleted",
+    "20": "BOOTP address leased to client",
+    "30": "DNS update failed",
+    "31": "DNS update request sent",
+    "32": "Lease deleted by administrator"
+  }
+}

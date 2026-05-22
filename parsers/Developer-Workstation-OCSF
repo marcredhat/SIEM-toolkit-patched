@@ -1,0 +1,118 @@
+{
+  // Developer-Workstation OCSF Parser — OCSF v1.3.0
+  // Endpoint EDR-style events for software-supply-chain hunts (H1..H18)
+  attributes: {
+    "metadata.version":             "1.3.0",
+    "metadata.product.vendor_name": "Synthetic",
+    "metadata.product.name":        "Developer Workstation EDR",
+    "metadata.log_provider":        "hec",
+    "Category":                     "endpoint",
+    "dataSource.vendor":            "Synthetic",
+    "dataSource.name":              "Developer Workstation",
+    "dataSource.category":          "Endpoint"
+  },
+
+  formats: [
+    {
+      // Auto-extract every JSON top-level + nested field as attributes.
+      // Nested objects flatten with dot-notation: process.image_name,
+      // endpoint.name, file.path, dns.query, registry.key_path, etc.
+      format: "$=json{parse=json}$",
+      halt: true,
+      rewrites: [
+        // ─── OCSF classification by event_type ──────────────────────────
+        { input: "event_type", output: "category_uid",  match: "PROCESS_START", replace: "1" },
+        { input: "event_type", output: "category_name", match: "PROCESS_START", replace: "System Activity" },
+        { input: "event_type", output: "class_uid",     match: "PROCESS_START", replace: "1007" },
+        { input: "event_type", output: "class_name",    match: "PROCESS_START", replace: "Process Activity" },
+
+        { input: "event_type", output: "category_uid",  match: "FILE_CREATE", replace: "1" },
+        { input: "event_type", output: "category_name", match: "FILE_CREATE", replace: "System Activity" },
+        { input: "event_type", output: "class_uid",     match: "FILE_CREATE", replace: "1001" },
+        { input: "event_type", output: "class_name",    match: "FILE_CREATE", replace: "File System Activity" },
+
+        { input: "event_type", output: "category_uid",  match: "FILE_WRITE", replace: "1" },
+        { input: "event_type", output: "category_name", match: "FILE_WRITE", replace: "System Activity" },
+        { input: "event_type", output: "class_uid",     match: "FILE_WRITE", replace: "1001" },
+        { input: "event_type", output: "class_name",    match: "FILE_WRITE", replace: "File System Activity" },
+
+        { input: "event_type", output: "category_uid",  match: "FILE_READ", replace: "1" },
+        { input: "event_type", output: "category_name", match: "FILE_READ", replace: "System Activity" },
+        { input: "event_type", output: "class_uid",     match: "FILE_READ", replace: "1001" },
+        { input: "event_type", output: "class_name",    match: "FILE_READ", replace: "File System Activity" },
+
+        { input: "event_type", output: "category_uid",  match: "DNS_QUERY", replace: "4" },
+        { input: "event_type", output: "category_name", match: "DNS_QUERY", replace: "Network Activity" },
+        { input: "event_type", output: "class_uid",     match: "DNS_QUERY", replace: "4003" },
+        { input: "event_type", output: "class_name",    match: "DNS_QUERY", replace: "DNS Activity" },
+
+        { input: "event_type", output: "category_uid",  match: "REGISTRY_SET", replace: "1" },
+        { input: "event_type", output: "category_name", match: "REGISTRY_SET", replace: "System Activity" },
+        { input: "event_type", output: "class_uid",     match: "REGISTRY_SET", replace: "201101" },
+        { input: "event_type", output: "class_name",    match: "REGISTRY_SET", replace: "Registry Key Activity" },
+
+        // ─── Severity mapping (string + OCSF int 0-6) ───────────────────
+        { input: "severity", output: "severity_id",  match: "(?i)critical", replace: "6" },
+        { input: "severity", output: "severity_id",  match: "(?i)high",     replace: "5" },
+        { input: "severity", output: "severity_id",  match: "(?i)medium",   replace: "4" },
+        { input: "severity", output: "severity_id",  match: "(?i)low",      replace: "2" },
+        { input: "severity", output: "severity_id",  match: "(?i)info",     replace: "1" },
+        { input: "severity", output: "severity_str", match: ".*",           replace: "$0" },
+
+        // ─── Activity / finding ─────────────────────────────────────────
+        { input: "event_type", output: "activity_name", match: ".*", replace: "$0" },
+        { input: "event_id",   output: "finding_info.uid", match: ".*", replace: "$0" },
+        { input: "timestamp",  output: "finding_info.created_time_dt", match: ".*", replace: "$0" },
+
+        // ─── Compliance tags ─────────────────────────────────────────
+        { input: "event_type", output: "compliance.standard", match: ".*", replace: "NIS2,SLSA,SSDF" },
+
+        // ─── Explicit extraction of nested fields from the raw message blob
+        // (the auto-flatten only handles top-level keys; nested objects like
+        // process.image_name remain inside `message`).
+        { input: "message", output: "endpoint.name",
+          match: "^.*?\"endpoint\":\\s*\\{\"name\":\\s*\"([^\"]+)\".*$",
+          replace: "$1" },
+        { input: "message", output: "endpoint.os",
+          match: "^.*?\"endpoint\":\\s*\\{\"name\":\\s*\"[^\"]+\",\\s*\"os\":\\s*\"([^\"]+)\".*$",
+          replace: "$1" },
+        { input: "message", output: "actor.user.name",
+          match: "^.*?\"actor\":\\s*\\{\"user\":\\s*\\{\"name\":\\s*\"([^\"]+)\".*$",
+          replace: "$1" },
+        { input: "message", output: "process.image_name",
+          match: "^.*?\"process\":\\s*\\{\"image_name\":\\s*\"([^\"]+)\".*$",
+          replace: "$1" },
+        { input: "message", output: "process.image_path",
+          match: "^.*?\"process\":\\s*\\{\"image_name\":\\s*\"[^\"]+\",\\s*\"image_path\":\\s*\"([^\"]+)\".*$",
+          replace: "$1" },
+        { input: "message", output: "process.command_line",
+          match: "^.*?\"image_path\":\\s*\"[^\"]+\",\\s*\"command_line\":\\s*\"((?:[^\"\\\\]|\\\\.)*)\".*$",
+          replace: "$1" },
+        { input: "message", output: "process.parent.image_name",
+          match: "^.*?\"parent\":\\s*\\{\"image_name\":\\s*\"([^\"]+)\".*$",
+          replace: "$1" },
+        { input: "message", output: "process.parent.command_line",
+          match: "^.*?\"parent\":\\s*\\{\"image_name\":\\s*\"[^\"]+\",\\s*\"command_line\":\\s*\"((?:[^\"\\\\]|\\\\.)*)\".*$",
+          replace: "$1" },
+        { input: "message", output: "file.path",
+          match: "^.*?\"file\":\\s*\\{\"path\":\\s*\"([^\"]+)\".*$",
+          replace: "$1" },
+        { input: "message", output: "file.action",
+          match: "^.*?\"file\":\\s*\\{\"path\":\\s*\"[^\"]+\",\\s*\"action\":\\s*\"([^\"]+)\".*$",
+          replace: "$1" },
+        { input: "message", output: "file.content",
+          match: "^.*?\"content_sample\":\\s*\"((?:[^\"\\\\]|\\\\.)*)\".*$",
+          replace: "$1" },
+        { input: "message", output: "dns.query",
+          match: "^.*?\"dns\":\\s*\\{\"query\":\\s*\"([^\"]+)\".*$",
+          replace: "$1" },
+        { input: "message", output: "registry.key_path",
+          match: "^.*?\"registry\":\\s*\\{\"key_path\":\\s*\"([^\"]+)\".*$",
+          replace: "$1" },
+        { input: "message", output: "scenario",
+          match: "^.*?\"_scenario\":\\s*\"([^\"]+)\".*$",
+          replace: "$1" }
+      ]
+    }
+  ]
+}

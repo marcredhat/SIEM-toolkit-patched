@@ -1,0 +1,70 @@
+{
+  "attributes": {
+    "dataSource.vendor":            "Darktrace",
+    "dataSource.name":              "Darktrace",
+    "marc_test_signature":          "MARC-PARSER-ACTIVE-99999",
+    "dataSource.category":          "ndr",
+    "metadata.product.vendor_name": "Darktrace",
+    "metadata.product.name":        "Enterprise Immune System",
+    "metadata.version":             "1.3.0"
+  },
+  "formats": [
+    {
+      "format": "$unmapped.{parse=json}$",
+      "rewrites": []
+    }
+  ],
+  "mappings": {
+    "version": 1,
+    "mappings": [
+      {
+        "predicate": "true",
+        "transformations": [
+          { "constant": { "value": 2,                    "field": "category_uid" } },
+          { "constant": { "value": "Findings",           "field": "category_name" } },
+          { "constant": { "value": 2004,                 "field": "class_uid" } },
+          { "constant": { "value": "Detection Finding",  "field": "class_name" } },
+          { "constant": { "value": 200401,               "field": "type_uid" } },
+          { "constant": { "value": "Detection Finding: Create", "field": "type_name" } },
+          { "constant": { "value": 1,                    "field": "activity_id" } },
+          { "constant": { "value": "Create",             "field": "activity_name" } },
+          { "constant": { "value": 1,                    "field": "status_id" } },
+          { "constant": { "value": "New",                "field": "status" } },
+
+          { "copy": { "from": "unmapped.creationTime", "to": "time" } },
+          { "copy": { "from": "unmapped.creationTime", "to": "finding_info.created_time" } },
+          { "copy": { "from": "unmapped.time",         "to": "finding_info.last_seen_time" } },
+
+          { "copy": { "from": "unmapped.pbid",         "to": "external_id" } },
+          { "copy": { "from": "unmapped.pbid",         "to": "metadata.correlation_uid" } },
+          { "copy": { "from": "unmapped.incidentId",   "to": "external_id" } },
+
+          { "copy": { "from": "unmapped.title",        "to": "finding_title" } },
+          { "copy": { "from": "unmapped.title",        "to": "finding.title" } },
+          { "copy": { "from": "unmapped.summary",      "to": "finding_info.desc" } },
+          { "copy": { "from": "unmapped.category",     "to": "metadata.product.feature.uid" } },
+
+          { "copy": { "from": "unmapped.model.name",        "to": "finding_title" } },
+          { "copy": { "from": "unmapped.model.name",        "to": "finding.title" } },
+          { "copy": { "from": "unmapped.model.uuid",        "to": "finding_uid" } },
+          { "copy": { "from": "unmapped.model.uuid",        "to": "finding.uid" } },
+          { "copy": { "from": "unmapped.model.description", "to": "finding_info.description" } },
+
+          { "copy": { "from": "unmapped.device.ip",       "to": "src_ip" } },
+          { "copy": { "from": "unmapped.device.ip",       "to": "src_endpoint.ip" } },
+          { "copy": { "from": "unmapped.device.ip",       "to": "device.ip" } },
+          { "copy": { "from": "unmapped.device.hostname", "to": "src_endpoint.hostname" } },
+          { "copy": { "from": "unmapped.device.hostname", "to": "device.hostname" } },
+          { "copy": { "from": "unmapped.device.hostname", "to": "device.name" } },
+          { "copy": { "from": "unmapped.device.mac",      "to": "src_endpoint.mac" } },
+          { "copy": { "from": "unmapped.device.mac",      "to": "device.mac" } },
+          { "copy": { "from": "unmapped.device.os",       "to": "device.os.name" } },
+          { "copy": { "from": "unmapped.device.type",     "to": "device.type" } },
+
+          { "copy": { "from": "unmapped.score", "to": "risk_score" } },
+          { "copy": { "from": "unmapped.score", "to": "confidence_score" } }
+        ]
+      }
+    ]
+  }
+}

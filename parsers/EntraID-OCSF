@@ -1,0 +1,87 @@
+{
+  // Microsoft Entra ID (Azure AD) JSON parser — OCSF v1.3.0
+  attributes: {
+    "metadata.version":             "1.3.0",
+    "metadata.product.vendor_name": "Microsoft",
+    "metadata.product.name":        "Entra ID",
+    "metadata.log_provider":        "azure-monitor",
+    "Category":               "iam",
+    "dataSource.vendor":      "Microsoft",
+    "dataSource.name":        "Entra ID",
+    "dataSource.category":    "identity",
+    "category_uid":           3,
+    "category_name":          "IAM",
+    "class_uid":              3002,
+    "class_name":             "Authentication",
+    "activity_id":            1,
+    "activity_name":          "Logon",
+    "type_uid":               300201,
+    "status_id":              1,
+    "status":                 "Success",
+    "severity_id":            1,
+    "severity":               "Informational"
+  },
+
+  formats: [
+    {
+      format: "$=json{parse=json}$",
+      halt: true,
+      rewrites: [
+        // Top-level fields
+        { input: "callerIpAddress", output: "src_endpoint.ip", match: ".*", replace: "$0" },
+        { input: "callerIpAddress", output: "src_ip",          match: ".*", replace: "$0" },
+        { input: "tenantId",        output: "tenant_id",       match: ".*", replace: "$0" },
+        { input: "correlationId",   output: "correlation_id",  match: ".*", replace: "$0" },
+        { input: "category",        output: "metadata.event_type", match: ".*", replace: "$0" },
+        { input: "resultType",      output: "result_code",     match: ".*", replace: "$0" },
+        { input: "resultDescription", output: "status_detail", match: ".*", replace: "$0" },
+        { input: "identity",        output: "actor.user.name", match: ".*", replace: "$0" },
+
+        // Status: errorCode 0 = Success, anything else = Failure
+        { input: "resultType", output: "status_id", match: "^0$",         replace: "1" },
+        { input: "resultType", output: "status",    match: "^0$",         replace: "Success" },
+        { input: "resultType", output: "status_id", match: "^[1-9].*",    replace: "2" },
+        { input: "resultType", output: "status",    match: "^[1-9].*",    replace: "Failure" },
+        { input: "resultType", output: "status_id", match: "^Success$",   replace: "1" },
+        { input: "resultType", output: "status",    match: "^Success$",   replace: "Success" },
+
+        // ═══════════ DETECTION FINDING PROMOTION ═══════════
+
+        // 1) High risk sign-in
+        { input: "riskLevelAggregated", output: "class_uid",     match: "^high$", replace: "2004" },
+        { input: "riskLevelAggregated", output: "class_name",    match: "^high$", replace: "Detection Finding" },
+        { input: "riskLevelAggregated", output: "category_uid",  match: "^high$", replace: "2" },
+        { input: "riskLevelAggregated", output: "category_name", match: "^high$", replace: "Findings" },
+        { input: "riskLevelAggregated", output: "type_uid",      match: "^high$", replace: "200401" },
+        { input: "riskLevelAggregated", output: "finding_title", match: "^high$", replace: "Entra ID High-Risk Sign-In" },
+        { input: "riskLevelAggregated", output: "finding_info.title", match: "^high$", replace: "Entra ID High-Risk Sign-In" },
+        { input: "riskLevelAggregated", output: "severity_id",   match: "^high$", replace: "5" },
+        { input: "riskLevelAggregated", output: "severity",      match: "^high$", replace: "Critical" },
+        { input: "riskLevelAggregated", output: "severity_id",   match: "^medium$", replace: "4" },
+        { input: "riskLevelAggregated", output: "severity",      match: "^medium$", replace: "High" },
+
+        // 2) Tor exit node detected (riskDetail field)
+        { input: "riskDetail", output: "class_uid",     match: "(?i)^.*Tor.*$", replace: "2004" },
+        { input: "riskDetail", output: "class_name",    match: "(?i)^.*Tor.*$", replace: "Detection Finding" },
+        { input: "riskDetail", output: "category_uid",  match: "(?i)^.*Tor.*$", replace: "2" },
+        { input: "riskDetail", output: "category_name", match: "(?i)^.*Tor.*$", replace: "Findings" },
+        { input: "riskDetail", output: "type_uid",      match: "(?i)^.*Tor.*$", replace: "200401" },
+        { input: "riskDetail", output: "finding_title", match: "(?i)^.*Tor.*$", replace: "Entra ID Tor Exit Node Sign-In" },
+        { input: "riskDetail", output: "finding_info.title", match: "(?i)^.*Tor.*$", replace: "Entra ID Tor Exit Node Sign-In" },
+        { input: "riskDetail", output: "severity_id",   match: "(?i)^.*Tor.*$", replace: "5" },
+        { input: "riskDetail", output: "severity",      match: "(?i)^.*Tor.*$", replace: "Critical" },
+
+        // 3) Failed authentication (resultType non-zero)
+        { input: "resultDescription", output: "class_uid",     match: "(?i)^.*Invalid username or password.*$", replace: "2004" },
+        { input: "resultDescription", output: "class_name",    match: "(?i)^.*Invalid username or password.*$", replace: "Detection Finding" },
+        { input: "resultDescription", output: "category_uid",  match: "(?i)^.*Invalid username or password.*$", replace: "2" },
+        { input: "resultDescription", output: "category_name", match: "(?i)^.*Invalid username or password.*$", replace: "Findings" },
+        { input: "resultDescription", output: "type_uid",      match: "(?i)^.*Invalid username or password.*$", replace: "200401" },
+        { input: "resultDescription", output: "finding_title", match: "(?i)^.*Invalid username or password.*$", replace: "Entra ID Authentication Failure" },
+        { input: "resultDescription", output: "finding_info.title", match: "(?i)^.*Invalid username or password.*$", replace: "Entra ID Authentication Failure" },
+        { input: "resultDescription", output: "severity_id",   match: "(?i)^.*Invalid username or password.*$", replace: "4" },
+        { input: "resultDescription", output: "severity",      match: "(?i)^.*Invalid username or password.*$", replace: "High" }
+      ]
+    }
+  ]
+}

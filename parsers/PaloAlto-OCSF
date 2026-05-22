@@ -1,0 +1,72 @@
+{
+  // Palo Alto PAN-OS CSV parser — OCSF v1.3.0
+  // Format: domain,receive_time,serial,type,subtype,...,src_ip,dst_ip,natsrc_ip,natdst_ip,rule,...
+  attributes: {
+    "metadata.version":             "1.3.0",
+    "metadata.product.vendor_name": "Palo Alto Networks",
+    "metadata.product.name":        "PAN-OS",
+    "Category":               "network",
+    "dataSource.vendor":      "Palo Alto Networks",
+    "dataSource.name":        "PAN-OS",
+    "dataSource.category":    "firewall",
+    "category_uid":           4,
+    "category_name":          "Network Activity",
+    "class_uid":              4001,
+    "class_name":             "Network Activity",
+    "activity_id":            6,
+    "type_uid":               400106,
+    "status_id":              1,
+    "status":                 "Success",
+    "severity_id":            1
+  },
+
+  patterns: {
+    word: "[^,]*",
+    csv:  "[^,]+"
+  },
+
+  formats: [
+    // TRAFFIC log
+    {
+      id: "panos_traffic",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        type_uid: 400106
+      },
+      format: "$domain=csv$,$receive_time=csv$,$serial=csv$,TRAFFIC,$subtype=csv$,$config_ver=csv$,$gen_time=csv$,$src_ip=csv$,$dst_ip=csv$,$natsrc_ip=word$,$natdst_ip=word$,$rule=csv$,$src_user=word$,$dst_user=word$,$application=csv$,.*",
+      halt: true
+    },
+
+    // THREAT log → Detection Finding
+    {
+      id: "panos_threat",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, category_name: "Findings",
+        type_uid: 200401,
+        finding_title: "Palo Alto Threat Detected",
+        severity_id: 5, severity: "Critical",
+        disposition_id: 2, disposition: "Blocked"
+      },
+      format: "$domain=csv$,$receive_time=csv$,$serial=csv$,THREAT,$threat_subtype=csv$,$config_ver=csv$,$gen_time=csv$,$src_ip=csv$,$dst_ip=csv$,$natsrc_ip=word$,$natdst_ip=word$,$rule=csv$,$src_user=word$,$dst_user=word$,$application=csv$,.*",
+      halt: true,
+      rewrites: [
+        { input: "threat_subtype", output: "finding_title", match: "(?i)^.*vulnerability.*$", replace: "Palo Alto Vulnerability Exploit Attempt" },
+        { input: "threat_subtype", output: "finding_title", match: "(?i)^.*virus.*$",         replace: "Palo Alto Malware Detected" },
+        { input: "threat_subtype", output: "finding_title", match: "(?i)^.*spyware.*$",       replace: "Palo Alto Spyware/C2 Detected" },
+        { input: "threat_subtype", output: "finding_title", match: "(?i)^.*url.*$",           replace: "Palo Alto Malicious URL" }
+      ]
+    },
+
+    // URL filtering log
+    {
+      id: "panos_url",
+      attributes: {
+        class_uid: 4002, class_name: "HTTP Activity",
+        type_uid: 400201
+      },
+      format: "$domain=csv$,$receive_time=csv$,$serial=csv$,URL,.*",
+      halt: true
+    }
+  ]
+}

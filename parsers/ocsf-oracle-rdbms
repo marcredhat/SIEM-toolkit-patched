@@ -1,0 +1,184 @@
+// SentinelOne AI SIEM Parser: Oracle RDBMS Audit Record
+// OCSF Schema Version: 1.1.0
+// Maps Oracle Database audit trail to OCSF classes
+// Primary Classes: Database Activity (4003), Authentication (3002), Authorization (3003)
+
+{
+  "parserName": "OracleRDBMS-OCSF",
+  "version": "1.0.0",
+  "vendor": "Oracle",
+  "product": "Oracle Database",
+  "format": "kv",
+  "delimiter": " ",
+  "kvSeparator": ":",
+  
+  "patterns": [
+    // Logon events
+    {
+      "pattern": "ACTION_NAME:\\s*LOGON",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        {"set": "category_uid", "value": "3"},
+        {"set": "category_name", "value": "Identity & Access Management"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Logon"},
+        {"set": "type_uid", "value": "300201"},
+        
+        // Metadata
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Oracle Database"},
+        {"set": "metadata.product.vendor_name", "value": "Oracle"},
+        {"regex": "DBID:\\s*(\\d+)", "group": 1, "to": "metadata.product.uid"},
+        {"regex": "INSTANCE_NUMBER:\\s*(\\d+)", "group": 1, "to": "metadata.product.feature.uid"},
+        
+        // Time
+        {"regex": "TIMESTAMP:\\s*([\\d-]+\\s[\\d:.]+\\s\\w+)", "group": 1, "to": "time"},
+        
+        // User
+        {"regex": "USERID:\\s*(\\S+)", "group": 1, "to": "user.name"},
+        {"regex": "OS_USERNAME:\\s*(\\S+)", "group": 1, "to": "actor.user.name"},
+        {"regex": "CLIENT_ID:\\s*(\\S+)", "group": 1, "to": "user.credential_uid"},
+        
+        // Session
+        {"regex": "SESSIONID:\\s*(\\d+)", "group": 1, "to": "session.uid"},
+        
+        // Source
+        {"regex": "USERHOST:\\s*(\\S+)", "group": 1, "to": "src_endpoint.name"},
+        {"regex": "TERMINAL:\\s*(\\S+)", "group": 1, "to": "src_endpoint.interface_name"},
+        {"regex": "OS_PROCESS:\\s*(\\d+)", "group": 1, "to": "actor.process.pid"},
+        
+        // Auth details
+        {"regex": "AUTHENTICATION_TYPE:\\s*(\\S+)", "group": 1, "to": "auth_protocol"},
+        {"regex": "PRIV_USED:\\s*(.+?)(?=\\s+\\w+:|$)", "group": 1, "to": "user.privileges"},
+        
+        // Status
+        {"regex": "RETURNCODE:\\s*(\\d+)", "group": 1, "to": "status_code"},
+        {"set": "status_id", "value": "1", "if": "RETURNCODE: 0"},
+        {"set": "status", "value": "Success", "if": "RETURNCODE: 0"},
+        {"set": "status_id", "value": "2", "if": "RETURNCODE: [^0]"},
+        {"set": "status", "value": "Failure", "if": "RETURNCODE: [^0]"},
+        
+        // Comment
+        {"regex": "COMMENT_TEXT:\\s*(.+?)$", "group": 1, "to": "message"}
+      ]
+    },
+    
+    // SELECT/Query events
+    {
+      "pattern": "ACTION_NAME:\\s*SELECT",
+      "rewrites": [
+        {"set": "class_uid", "value": "4003"},
+        {"set": "class_name", "value": "Database Activity"},
+        {"set": "category_uid", "value": "4"},
+        {"set": "category_name", "value": "Network Activity"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Query"},
+        {"set": "type_uid", "value": "400301"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Oracle Database"},
+        {"set": "metadata.product.vendor_name", "value": "Oracle"},
+        
+        // User
+        {"regex": "USERID:\\s*(\\S+)", "group": 1, "to": "actor.user.name"},
+        {"regex": "SESSIONID:\\s*(\\d+)", "group": 1, "to": "actor.session.uid"},
+        
+        // Database object
+        {"regex": "OBJ_CREATOR:\\s*(\\S+)", "group": 1, "to": "database.schema"},
+        {"regex": "OBJ_NAME:\\s*(\\S+)", "group": 1, "to": "database.table"},
+        
+        // Query
+        {"regex": "SQL_TEXT:\\s*(.+?)(?=\\s+\\w+:|$)", "group": 1, "to": "query_info.query_string"},
+        {"set": "query_info.query_type", "value": "SELECT"},
+        
+        // Source
+        {"regex": "USERHOST:\\s*(\\S+)", "group": 1, "to": "src_endpoint.name"},
+        
+        // Privileges
+        {"regex": "PRIV_USED:\\s*(.+?)(?=\\s+\\w+:|$)", "group": 1, "to": "actor.user.privileges"}
+      ]
+    },
+    
+    // INSERT/UPDATE/DELETE events
+    {
+      "pattern": "ACTION_NAME:\\s*(INSERT|UPDATE|DELETE)",
+      "rewrites": [
+        {"set": "class_uid", "value": "4003"},
+        {"set": "class_name", "value": "Database Activity"},
+        {"set": "category_uid", "value": "4"},
+        {"set": "category_name", "value": "Network Activity"},
+        
+        {"lookup": "ACTION_NAME", "map": {"INSERT": 2, "UPDATE": 3, "DELETE": 4}, "to": "activity_id"},
+        {"lookup": "ACTION_NAME", "map": {"INSERT": "Insert", "UPDATE": "Update", "DELETE": "Delete"}, "to": "activity_name"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Oracle Database"},
+        {"set": "metadata.product.vendor_name", "value": "Oracle"},
+        
+        // User
+        {"regex": "USERID:\\s*(\\S+)", "group": 1, "to": "actor.user.name"},
+        {"regex": "SESSIONID:\\s*(\\d+)", "group": 1, "to": "actor.session.uid"},
+        
+        // Database object
+        {"regex": "OBJ_CREATOR:\\s*(\\S+)", "group": 1, "to": "database.schema"},
+        {"regex": "OBJ_NAME:\\s*(\\S+)", "group": 1, "to": "database.table"},
+        
+        // Query
+        {"regex": "SQL_TEXT:\\s*(.+?)(?=\\s+\\w+:|$)", "group": 1, "to": "query_info.query_string"},
+        
+        // Source
+        {"regex": "USERHOST:\\s*(\\S+)", "group": 1, "to": "src_endpoint.name"},
+        
+        // Severity for data modification
+        {"set": "severity_id", "value": "2"},
+        {"set": "severity", "value": "Low"}
+      ]
+    },
+    
+    // GRANT/REVOKE events
+    {
+      "pattern": "ACTION_NAME:\\s*(GRANT|REVOKE)",
+      "rewrites": [
+        {"set": "class_uid", "value": "3003"},
+        {"set": "class_name", "value": "Authorization"},
+        {"set": "category_uid", "value": "3"},
+        {"set": "category_name", "value": "Identity & Access Management"},
+        
+        {"lookup": "ACTION_NAME", "map": {"GRANT": 1, "REVOKE": 2}, "to": "activity_id"},
+        {"lookup": "ACTION_NAME", "map": {"GRANT": "Grant", "REVOKE": "Revoke"}, "to": "activity_name"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Oracle Database"},
+        {"set": "metadata.product.vendor_name", "value": "Oracle"},
+        
+        // Actor (who granted)
+        {"regex": "USERID:\\s*(\\S+)", "group": 1, "to": "actor.user.name"},
+        
+        // Target (who received)
+        {"regex": "GRANTEE:\\s*(\\S+)", "group": 1, "to": "user.name"},
+        
+        // Privilege/Role
+        {"regex": "OBJ_NAME:\\s*(\\S+)", "group": 1, "to": "privileges"},
+        {"regex": "SQL_TEXT:\\s*(.+?)(?=\\s+\\w+:|$)", "group": 1, "to": "message"},
+        
+        // Severity for privilege changes
+        {"set": "severity_id", "value": "4"},
+        {"set": "severity", "value": "High"}
+      ]
+    }
+  ],
+  
+  "action_mappings": {
+    "100": {"name": "LOGON", "class": "Authentication", "activity": "Logon"},
+    "101": {"name": "LOGOFF", "class": "Authentication", "activity": "Logoff"},
+    "103": {"name": "SELECT", "class": "Database Activity", "activity": "Query"},
+    "2": {"name": "INSERT", "class": "Database Activity", "activity": "Insert"},
+    "6": {"name": "UPDATE", "class": "Database Activity", "activity": "Update"},
+    "7": {"name": "DELETE", "class": "Database Activity", "activity": "Delete"},
+    "108": {"name": "GRANT", "class": "Authorization", "activity": "Grant"},
+    "109": {"name": "REVOKE", "class": "Authorization", "activity": "Revoke"},
+    "1": {"name": "CREATE TABLE", "class": "Database Activity", "activity": "Create"},
+    "12": {"name": "DROP TABLE", "class": "Database Activity", "activity": "Delete"}
+  }
+}

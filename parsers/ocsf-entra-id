@@ -1,0 +1,242 @@
+// SentinelOne AI SIEM Parser: Microsoft Entra ID (Azure AD)
+// OCSF Schema Version: 1.1.0
+// Maps Entra ID JSON audit/sign-in logs to OCSF classes
+// Primary Classes: Authentication (3002), Account Change (3001), Group Membership (3004)
+
+{
+  "parserName": "EntraID-OCSF",
+  "version": "1.0.0",
+  "vendor": "Microsoft",
+  "product": "Entra ID",
+  "format": "json",
+  
+  "patterns": [
+    // Sign-in logs (successful)
+    {
+      "pattern": "\"category\":\\s*\"SignInLogs\".*\"resultType\":\\s*\"0\"",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        {"set": "category_uid", "value": "3"},
+        {"set": "category_name", "value": "Identity & Access Management"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Logon"},
+        {"set": "type_uid", "value": "300201"},
+        
+        // Metadata
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Microsoft Entra ID"},
+        {"set": "metadata.product.vendor_name", "value": "Microsoft"},
+        {"jsonPath": "$.tenantId", "to": "metadata.tenant_uid"},
+        {"jsonPath": "$.correlationId", "to": "metadata.correlation_uid"},
+        {"jsonPath": "$.properties.id", "to": "metadata.uid"},
+        
+        // Time
+        {"jsonPath": "$.time", "to": "time"},
+        
+        // User
+        {"jsonPath": "$.properties.userDisplayName", "to": "user.full_name"},
+        {"jsonPath": "$.properties.userPrincipalName", "to": "user.email_addr"},
+        {"jsonPath": "$.properties.userId", "to": "user.uid"},
+        
+        // Source endpoint
+        {"jsonPath": "$.callerIpAddress", "to": "src_endpoint.ip"},
+        {"jsonPath": "$.properties.ipAddress", "to": "src_endpoint.ip"},
+        {"jsonPath": "$.properties.deviceDetail.displayName", "to": "src_endpoint.name"},
+        {"jsonPath": "$.properties.deviceDetail.deviceId", "to": "src_endpoint.uid"},
+        {"jsonPath": "$.properties.deviceDetail.operatingSystem", "to": "src_endpoint.os.name"},
+        {"jsonPath": "$.properties.deviceDetail.browser", "to": "src_endpoint.browser"},
+        
+        // Device compliance
+        {"jsonPath": "$.properties.deviceDetail.isCompliant", "to": "src_endpoint.is_compliant"},
+        {"jsonPath": "$.properties.deviceDetail.isManaged", "to": "src_endpoint.is_managed"},
+        {"jsonPath": "$.properties.deviceDetail.trustType", "to": "src_endpoint.trust_type"},
+        
+        // Location
+        {"jsonPath": "$.properties.location.city", "to": "src_endpoint.location.city"},
+        {"jsonPath": "$.properties.location.state", "to": "src_endpoint.location.region"},
+        {"jsonPath": "$.properties.location.countryOrRegion", "to": "src_endpoint.location.country"},
+        {"jsonPath": "$.properties.location.geoCoordinates.latitude", "to": "src_endpoint.location.lat"},
+        {"jsonPath": "$.properties.location.geoCoordinates.longitude", "to": "src_endpoint.location.long"},
+        
+        // Application
+        {"jsonPath": "$.properties.appDisplayName", "to": "app_name"},
+        {"jsonPath": "$.properties.appId", "to": "app.uid"},
+        {"jsonPath": "$.properties.clientAppUsed", "to": "auth_protocol"},
+        {"jsonPath": "$.properties.userAgent", "to": "http_request.user_agent"},
+        
+        // MFA
+        {"jsonPath": "$.properties.mfaDetail.authMethod", "to": "mfa.method"},
+        {"jsonPath": "$.properties.mfaDetail.authDetail", "to": "mfa.detail"},
+        
+        // Conditional Access
+        {"jsonPath": "$.properties.conditionalAccessStatus", "to": "policy.result"},
+        
+        // Risk
+        {"jsonPath": "$.properties.riskDetail", "to": "risk_detail"},
+        {"jsonPath": "$.properties.riskLevelAggregated", "to": "risk_level"},
+        {"jsonPath": "$.properties.riskLevelDuringSignIn", "to": "risk_level_signin"},
+        {"jsonPath": "$.properties.riskState", "to": "risk_state"},
+        
+        // Status
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    },
+    
+    // Sign-in logs (failed)
+    {
+      "pattern": "\"category\":\\s*\"SignInLogs\".*\"resultType\":\\s*\"[^0]",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Logon"},
+        {"set": "status_id", "value": "2"},
+        {"set": "status", "value": "Failure"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Microsoft Entra ID"},
+        {"set": "metadata.product.vendor_name", "value": "Microsoft"},
+        
+        {"jsonPath": "$.time", "to": "time"},
+        {"jsonPath": "$.properties.userPrincipalName", "to": "user.email_addr"},
+        {"jsonPath": "$.callerIpAddress", "to": "src_endpoint.ip"},
+        {"jsonPath": "$.resultType", "to": "status_code"},
+        {"jsonPath": "$.resultDescription", "to": "status_detail"},
+        {"jsonPath": "$.properties.status.errorCode", "to": "error.code"},
+        {"jsonPath": "$.properties.status.failureReason", "to": "error.message"},
+        
+        // Location
+        {"jsonPath": "$.properties.location.countryOrRegion", "to": "src_endpoint.location.country"},
+        
+        // Risk
+        {"jsonPath": "$.properties.riskLevelAggregated", "to": "risk_level"},
+        
+        // Severity based on risk
+        {"lookup": "risk_level", "map": {"high": 4, "medium": 3, "low": 2, "none": 1}, "to": "severity_id"},
+        {"lookup": "risk_level", "map": {"high": "High", "medium": "Medium", "low": "Low", "none": "Informational"}, "to": "severity"}
+      ]
+    },
+    
+    // Risky sign-ins
+    {
+      "pattern": "\"category\":\\s*\"RiskySignIns\"",
+      "rewrites": [
+        {"set": "class_uid", "value": "2001"},
+        {"set": "class_name", "value": "Security Finding"},
+        {"set": "category_uid", "value": "2"},
+        {"set": "category_name", "value": "Findings"},
+        {"set": "finding_info.types", "value": ["Identity Risk"]},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Microsoft Entra ID Protection"},
+        {"set": "metadata.product.vendor_name", "value": "Microsoft"},
+        
+        {"jsonPath": "$.time", "to": "time"},
+        {"jsonPath": "$.properties.userDisplayName", "to": "user.full_name"},
+        {"jsonPath": "$.properties.userPrincipalName", "to": "user.email_addr"},
+        {"jsonPath": "$.properties.userId", "to": "user.uid"},
+        {"jsonPath": "$.callerIpAddress", "to": "src_endpoint.ip"},
+        
+        // Risk details
+        {"jsonPath": "$.properties.riskDetail", "to": "finding_info.title"},
+        {"jsonPath": "$.properties.riskEventTypes", "to": "finding_info.types"},
+        {"jsonPath": "$.properties.riskLevelAggregated", "to": "risk_level"},
+        {"jsonPath": "$.properties.riskState", "to": "risk_state"},
+        
+        // Location
+        {"jsonPath": "$.properties.location.countryOrRegion", "to": "src_endpoint.location.country"},
+        
+        // Severity
+        {"lookup": "risk_level", "map": {"high": 5, "medium": 4, "low": 3}, "to": "severity_id"},
+        {"lookup": "risk_level", "map": {"high": "Critical", "medium": "High", "low": "Medium"}, "to": "severity"}
+      ]
+    },
+    
+    // Audit logs - Group membership
+    {
+      "pattern": "\"category\":\\s*\"AuditLogs\".*\"activityDisplayName\":\\s*\"Add member to group\"",
+      "rewrites": [
+        {"set": "class_uid", "value": "3004"},
+        {"set": "class_name", "value": "Group Membership"},
+        {"set": "category_uid", "value": "3"},
+        {"set": "category_name", "value": "Identity & Access Management"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Add"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Microsoft Entra ID"},
+        {"set": "metadata.product.vendor_name", "value": "Microsoft"},
+        
+        {"jsonPath": "$.time", "to": "time"},
+        
+        // Actor
+        {"jsonPath": "$.properties.initiatedBy.user.displayName", "to": "actor.user.full_name"},
+        {"jsonPath": "$.properties.initiatedBy.user.userPrincipalName", "to": "actor.user.email_addr"},
+        {"jsonPath": "$.properties.initiatedBy.user.id", "to": "actor.user.uid"},
+        {"jsonPath": "$.properties.initiatedBy.user.ipAddress", "to": "src_endpoint.ip"},
+        
+        // Group
+        {"jsonPath": "$.properties.targetResources[0].displayName", "to": "group.name"},
+        {"jsonPath": "$.properties.targetResources[0].id", "to": "group.uid"},
+        
+        // User added
+        {"jsonPath": "$.properties.targetResources[1].displayName", "to": "user.full_name"},
+        {"jsonPath": "$.properties.targetResources[1].userPrincipalName", "to": "user.email_addr"},
+        {"jsonPath": "$.properties.targetResources[1].id", "to": "user.uid"},
+        
+        // Status
+        {"jsonPath": "$.properties.result", "to": "status"},
+        {"lookup": "status", "map": {"success": 1, "failure": 2}, "to": "status_id"}
+      ]
+    },
+    
+    // Audit logs - Password reset
+    {
+      "pattern": "\"category\":\\s*\"AuditLogs\".*\"activityDisplayName\":\\s*\"Reset user password\"",
+      "rewrites": [
+        {"set": "class_uid", "value": "3001"},
+        {"set": "class_name", "value": "Account Change"},
+        {"set": "category_uid", "value": "3"},
+        {"set": "category_name", "value": "Identity & Access Management"},
+        {"set": "activity_id", "value": "3"},
+        {"set": "activity_name", "value": "Password Reset"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Microsoft Entra ID"},
+        {"set": "metadata.product.vendor_name", "value": "Microsoft"},
+        
+        {"jsonPath": "$.time", "to": "time"},
+        
+        // Actor
+        {"jsonPath": "$.properties.initiatedBy.user.displayName", "to": "actor.user.full_name"},
+        {"jsonPath": "$.properties.initiatedBy.user.userPrincipalName", "to": "actor.user.email_addr"},
+        {"jsonPath": "$.properties.initiatedBy.user.ipAddress", "to": "src_endpoint.ip"},
+        
+        // Target user
+        {"jsonPath": "$.properties.targetResources[0].displayName", "to": "user.full_name"},
+        {"jsonPath": "$.properties.targetResources[0].userPrincipalName", "to": "user.email_addr"},
+        {"jsonPath": "$.properties.targetResources[0].id", "to": "user.uid"},
+        
+        // Status
+        {"jsonPath": "$.properties.result", "to": "status"},
+        {"lookup": "status", "map": {"success": 1, "failure": 2}, "to": "status_id"},
+        
+        // Severity for password changes
+        {"set": "severity_id", "value": "3"},
+        {"set": "severity", "value": "Medium"}
+      ]
+    }
+  ],
+  
+  "error_code_mappings": {
+    "50126": "Invalid username or password",
+    "50053": "Account locked",
+    "50057": "Account disabled",
+    "50055": "Password expired",
+    "50076": "MFA required",
+    "50074": "Strong authentication required",
+    "53003": "Blocked by Conditional Access"
+  }
+}

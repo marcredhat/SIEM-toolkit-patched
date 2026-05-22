@@ -1,0 +1,308 @@
+// SentinelOne AI SIEM Parser: SAP HANA Database
+// OCSF Schema Version: 1.1.0
+// Maps SAP HANA audit JSON logs to OCSF classes
+// Primary Classes: Database Activity (4003), Authentication (3002), Authorization (3003)
+
+{
+  "parserName": "HANADatabase-OCSF",
+  "version": "1.0.0",
+  "vendor": "SAP",
+  "product": "HANA Database",
+  "format": "json",
+  
+  "patterns": [
+    // Connection events (CONNECT/DISCONNECT)
+    {
+      "pattern": "\"audit_action\":\\s*\"CONNECT\"",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        {"set": "category_uid", "value": "3"},
+        {"set": "category_name", "value": "Identity & Access Management"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Logon"},
+        {"set": "type_uid", "value": "300201"},
+        
+        // Metadata
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "SAP HANA"},
+        {"set": "metadata.product.vendor_name", "value": "SAP"},
+        {"jsonPath": "$.host", "to": "device.hostname"},
+        {"jsonPath": "$.component", "to": "metadata.product.feature.name"},
+        {"jsonPath": "$.source_file", "to": "metadata.log_name"},
+        {"jsonPath": "$.source_line", "to": "metadata.log_line"},
+        {"jsonPath": "$.thread_id", "to": "metadata.uid"},
+        
+        // Time
+        {"jsonPath": "$.timestamp", "to": "time"},
+        
+        // User
+        {"jsonPath": "$.user_name", "to": "user.name"},
+        {"jsonPath": "$.application_user", "to": "actor.user.name"},
+        {"jsonPath": "$.application_name", "to": "app_name"},
+        
+        // Session
+        {"jsonPath": "$.connection_id", "to": "session.uid"},
+        
+        // Source endpoint
+        {"jsonPath": "$.client_ip", "to": "src_endpoint.ip"},
+        {"jsonPath": "$.client_port", "to": "src_endpoint.port"},
+        
+        // Audit policy
+        {"jsonPath": "$.audit_policy_name", "to": "policy.name"},
+        {"jsonPath": "$.audit_level", "to": "severity"},
+        
+        // Comment
+        {"jsonPath": "$.comment", "to": "message"},
+        
+        // Status - check for error
+        {"set": "status_id", "value": "1", "if": "\"error_code\":\\s*null|\"error_code\":\\s*0"},
+        {"set": "status", "value": "Success", "if": "\"error_code\":\\s*null|\"error_code\":\\s*0"}
+      ]
+    },
+    
+    // Failed connection
+    {
+      "pattern": "\"audit_action\":\\s*\"CONNECT\".*\"error_code\":\\s*[1-9]",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Logon"},
+        {"set": "status_id", "value": "2"},
+        {"set": "status", "value": "Failure"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "SAP HANA"},
+        {"set": "metadata.product.vendor_name", "value": "SAP"},
+        
+        {"jsonPath": "$.timestamp", "to": "time"},
+        {"jsonPath": "$.user_name", "to": "user.name"},
+        {"jsonPath": "$.client_ip", "to": "src_endpoint.ip"},
+        {"jsonPath": "$.error_code", "to": "status_code"},
+        {"jsonPath": "$.error_message", "to": "status_detail"},
+        
+        // Severity
+        {"set": "severity_id", "value": "3"},
+        {"set": "severity", "value": "Medium"}
+      ]
+    },
+    
+    // Disconnect
+    {
+      "pattern": "\"audit_action\":\\s*\"DISCONNECT\"",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        {"set": "activity_id", "value": "2"},
+        {"set": "activity_name", "value": "Logoff"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "SAP HANA"},
+        {"set": "metadata.product.vendor_name", "value": "SAP"},
+        
+        {"jsonPath": "$.timestamp", "to": "time"},
+        {"jsonPath": "$.user_name", "to": "user.name"},
+        {"jsonPath": "$.connection_id", "to": "session.uid"},
+        {"jsonPath": "$.session_duration_seconds", "to": "session.duration"},
+        
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    },
+    
+    // SELECT queries
+    {
+      "pattern": "\"audit_action\":\\s*\"SELECT\"",
+      "rewrites": [
+        {"set": "class_uid", "value": "4003"},
+        {"set": "class_name", "value": "Database Activity"},
+        {"set": "category_uid", "value": "4"},
+        {"set": "category_name", "value": "Network Activity"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Query"},
+        {"set": "type_uid", "value": "400301"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "SAP HANA"},
+        {"set": "metadata.product.vendor_name", "value": "SAP"},
+        
+        {"jsonPath": "$.timestamp", "to": "time"},
+        {"jsonPath": "$.user_name", "to": "actor.user.name"},
+        {"jsonPath": "$.connection_id", "to": "actor.session.uid"},
+        {"jsonPath": "$.transaction_id", "to": "transaction.uid"},
+        {"jsonPath": "$.statement_id", "to": "query_info.uid"},
+        
+        // Query details
+        {"jsonPath": "$.statement", "to": "query_info.query_string"},
+        {"jsonPath": "$.executed_statement", "to": "query_info.executed_query"},
+        {"set": "query_info.query_type", "value": "SELECT"},
+        
+        // Performance
+        {"jsonPath": "$.rows_affected", "to": "query_info.rows_affected"},
+        {"jsonPath": "$.execution_time_ms", "to": "query_info.duration"},
+        
+        // Source
+        {"jsonPath": "$.client_ip", "to": "src_endpoint.ip"},
+        {"jsonPath": "$.application_name", "to": "app_name"},
+        
+        // Status
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    },
+    
+    // Data modification (INSERT/UPDATE/DELETE)
+    {
+      "pattern": "\"audit_action\":\\s*\"(INSERT|UPDATE|DELETE)\"",
+      "rewrites": [
+        {"set": "class_uid", "value": "4003"},
+        {"set": "class_name", "value": "Database Activity"},
+        {"set": "category_uid", "value": "4"},
+        {"set": "category_name", "value": "Network Activity"},
+        
+        {"jsonPath": "$.audit_action", "to": "activity_name"},
+        {"lookup": "activity_name", "map": {"INSERT": 2, "UPDATE": 3, "DELETE": 4}, "to": "activity_id"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "SAP HANA"},
+        {"set": "metadata.product.vendor_name", "value": "SAP"},
+        
+        {"jsonPath": "$.timestamp", "to": "time"},
+        {"jsonPath": "$.user_name", "to": "actor.user.name"},
+        {"jsonPath": "$.connection_id", "to": "actor.session.uid"},
+        {"jsonPath": "$.transaction_id", "to": "transaction.uid"},
+        
+        // Query
+        {"jsonPath": "$.statement", "to": "query_info.query_string"},
+        {"jsonPath": "$.executed_statement", "to": "query_info.executed_query"},
+        {"jsonPath": "$.rows_affected", "to": "query_info.rows_affected"},
+        {"jsonPath": "$.execution_time_ms", "to": "query_info.duration"},
+        
+        // Source
+        {"jsonPath": "$.client_ip", "to": "src_endpoint.ip"},
+        
+        // Severity for data modification
+        {"set": "severity_id", "value": "2"},
+        {"set": "severity", "value": "Low"},
+        
+        // Status
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    },
+    
+    // GRANT/REVOKE (privilege changes)
+    {
+      "pattern": "\"audit_action\":\\s*\"GRANT\"",
+      "rewrites": [
+        {"set": "class_uid", "value": "3003"},
+        {"set": "class_name", "value": "Authorization"},
+        {"set": "category_uid", "value": "3"},
+        {"set": "category_name", "value": "Identity & Access Management"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Grant"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "SAP HANA"},
+        {"set": "metadata.product.vendor_name", "value": "SAP"},
+        
+        {"jsonPath": "$.timestamp", "to": "time"},
+        {"jsonPath": "$.user_name", "to": "actor.user.name"},
+        {"jsonPath": "$.connection_id", "to": "actor.session.uid"},
+        
+        // Privilege details
+        {"jsonPath": "$.statement", "to": "message"},
+        {"jsonPath": "$.executed_statement", "to": "privileges"},
+        
+        // Source
+        {"jsonPath": "$.client_ip", "to": "src_endpoint.ip"},
+        
+        // Severity for privilege grants
+        {"set": "severity_id", "value": "4"},
+        {"set": "severity", "value": "High"},
+        
+        // Status
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    },
+    
+    // Backup operations
+    {
+      "pattern": "\"audit_action\":\\s*\"BACKUP DATA\"",
+      "rewrites": [
+        {"set": "class_uid", "value": "4003"},
+        {"set": "class_name", "value": "Database Activity"},
+        {"set": "activity_id", "value": "5"},
+        {"set": "activity_name", "value": "Backup"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "SAP HANA"},
+        {"set": "metadata.product.vendor_name", "value": "SAP"},
+        
+        {"jsonPath": "$.timestamp", "to": "time"},
+        {"jsonPath": "$.user_name", "to": "actor.user.name"},
+        {"jsonPath": "$.application_user", "to": "actor.user.account.name"},
+        {"jsonPath": "$.application_name", "to": "app_name"},
+        
+        // Backup details
+        {"jsonPath": "$.statement", "to": "message"},
+        {"jsonPath": "$.backup_id", "to": "backup.uid"},
+        {"jsonPath": "$.backup_size_mb", "to": "backup.size"},
+        
+        // Source
+        {"jsonPath": "$.client_ip", "to": "src_endpoint.ip"},
+        
+        // Status
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    },
+    
+    // Critical audit level events
+    {
+      "pattern": "\"audit_level\":\\s*\"CRITICAL\"",
+      "rewrites": [
+        {"set": "class_uid", "value": "2001"},
+        {"set": "class_name", "value": "Security Finding"},
+        {"set": "category_uid", "value": "2"},
+        {"set": "category_name", "value": "Findings"},
+        {"set": "finding_info.types", "value": ["Database Security Event"]},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "SAP HANA"},
+        {"set": "metadata.product.vendor_name", "value": "SAP"},
+        
+        {"jsonPath": "$.timestamp", "to": "time"},
+        {"jsonPath": "$.user_name", "to": "actor.user.name"},
+        {"jsonPath": "$.audit_action", "to": "finding_info.title"},
+        {"jsonPath": "$.comment", "to": "finding_info.desc"},
+        {"jsonPath": "$.statement", "to": "finding_info.data_sources"},
+        
+        // Source
+        {"jsonPath": "$.client_ip", "to": "src_endpoint.ip"},
+        
+        // Severity
+        {"set": "severity_id", "value": "5"},
+        {"set": "severity", "value": "Critical"}
+      ]
+    }
+  ],
+  
+  "audit_action_mappings": {
+    "CONNECT": {"class": "Authentication", "activity": "Logon"},
+    "DISCONNECT": {"class": "Authentication", "activity": "Logoff"},
+    "SELECT": {"class": "Database Activity", "activity": "Query"},
+    "INSERT": {"class": "Database Activity", "activity": "Insert"},
+    "UPDATE": {"class": "Database Activity", "activity": "Update"},
+    "DELETE": {"class": "Database Activity", "activity": "Delete"},
+    "CREATE": {"class": "Database Activity", "activity": "Create"},
+    "DROP": {"class": "Database Activity", "activity": "Delete"},
+    "ALTER": {"class": "Database Activity", "activity": "Update"},
+    "GRANT": {"class": "Authorization", "activity": "Grant"},
+    "REVOKE": {"class": "Authorization", "activity": "Revoke"},
+    "BACKUP DATA": {"class": "Database Activity", "activity": "Backup"},
+    "RESTORE": {"class": "Database Activity", "activity": "Restore"}
+  }
+}

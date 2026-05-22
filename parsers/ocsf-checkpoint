@@ -1,0 +1,197 @@
+// SentinelOne AI SIEM Parser: Check Point Security Gateway
+// OCSF Schema Version: 1.1.0
+// Maps Check Point pipe-delimited logs to OCSF classes
+// Primary Classes: Network Activity (4001), Security Finding (2001), Detection Finding (2004)
+
+{
+  "parserName": "CheckPoint-OCSF",
+  "version": "1.0.0",
+  "vendor": "Check Point",
+  "product": "Security Gateway",
+  "format": "kv",
+  "delimiter": "|",
+  "kvSeparator": "=",
+  
+  "patterns": [
+    // Firewall Traffic logs
+    {
+      "pattern": "product=VPN-1 & FireWall-1",
+      "rewrites": [
+        {"set": "class_uid", "value": "4001"},
+        {"set": "class_name", "value": "Network Activity"},
+        {"set": "category_uid", "value": "4"},
+        {"set": "category_name", "value": "Network Activity"},
+        
+        // Activity mapping
+        {"lookup": "action", "map": {
+          "Accept": 1, "Drop": 2, "Reject": 2, "Block": 2, "Log": 0, "Detect": 1
+        }, "to": "activity_id"},
+        {"lookup": "action", "map": {
+          "Accept": "Traffic Allowed", "Drop": "Traffic Denied", "Reject": "Traffic Rejected",
+          "Block": "Traffic Blocked", "Log": "Traffic Logged", "Detect": "Traffic Detected"
+        }, "to": "activity_name"},
+        
+        // Metadata
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Check Point Firewall"},
+        {"set": "metadata.product.vendor_name", "value": "Check Point"},
+        {"copy": "loguid", "to": "metadata.uid"},
+        {"copy": "origin", "to": "device.ip"},
+        {"copy": "originsicname", "to": "device.name"},
+        {"copy": "sequencenum", "to": "metadata.sequence"},
+        
+        // Time
+        {"copy": "time", "to": "time", "transform": "epochToISO"},
+        
+        // Source endpoint
+        {"copy": "src", "to": "src_endpoint.ip"},
+        {"copy": "s_port", "to": "src_endpoint.port"},
+        {"copy": "ifname", "to": "src_endpoint.interface_name"},
+        
+        // Destination endpoint
+        {"copy": "dst", "to": "dst_endpoint.ip"},
+        {"copy": "service", "to": "dst_endpoint.port"},
+        
+        // Connection info
+        {"copy": "proto", "to": "connection_info.protocol_num"},
+        {"lookup": "proto", "map": {"6": "TCP", "17": "UDP", "1": "ICMP"}, "to": "connection_info.protocol_name"},
+        {"copy": "conn_direction", "to": "connection_info.direction"},
+        
+        // NAT
+        {"copy": "xlatesrc", "to": "proxy.ip"},
+        {"copy": "xlatesport", "to": "proxy.port"},
+        {"copy": "xlatedst", "to": "dst_endpoint.intermediate_ips"},
+        
+        // Policy
+        {"copy": "rule_uid", "to": "policy.uid"},
+        {"copy": "rule_name", "to": "policy.name"},
+        {"copy": "layer_name", "to": "policy.group.name"},
+        {"copy": "rule_action", "to": "policy.rule.action"},
+        
+        // Status
+        {"lookup": "action", "map": {"Accept": 1, "Drop": 2, "Reject": 2, "Block": 2}, "to": "status_id"},
+        {"lookup": "action", "map": {"Accept": "Success", "Drop": "Failure", "Reject": "Failure", "Block": "Failure"}, "to": "status"}
+      ]
+    },
+    
+    // IPS/SmartDefense logs
+    {
+      "pattern": "product=SmartDefense",
+      "rewrites": [
+        {"set": "class_uid", "value": "2004"},
+        {"set": "class_name", "value": "Detection Finding"},
+        {"set": "category_uid", "value": "2"},
+        {"set": "category_name", "value": "Findings"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Check Point IPS"},
+        {"set": "metadata.product.vendor_name", "value": "Check Point"},
+        
+        // Finding info
+        {"copy": "attack", "to": "finding_info.title"},
+        {"copy": "attack_info", "to": "finding_info.desc"},
+        {"copy": "protection_id", "to": "finding_info.uid"},
+        {"copy": "protection_name", "to": "finding_info.types"},
+        {"copy": "protection_type", "to": "finding_info.type_uid"},
+        
+        // Severity
+        {"lookup": "severity", "map": {"Critical": 5, "High": 4, "Medium": 3, "Low": 2, "Info": 1}, "to": "severity_id"},
+        {"copy": "severity", "to": "severity"},
+        
+        // Confidence
+        {"lookup": "confidence_level", "map": {"High": 3, "Medium": 2, "Low": 1}, "to": "confidence_id"},
+        {"copy": "confidence_level", "to": "confidence"},
+        
+        // Performance impact
+        {"copy": "performance_impact", "to": "impact_score"},
+        
+        // Endpoints
+        {"copy": "src", "to": "src_endpoint.ip"},
+        {"copy": "s_port", "to": "src_endpoint.port"},
+        {"copy": "dst", "to": "dst_endpoint.ip"},
+        {"copy": "service", "to": "dst_endpoint.port"},
+        
+        // Action
+        {"lookup": "action", "map": {"Drop": 2, "Detect": 1, "Prevent": 2, "Log": 0}, "to": "activity_id"}
+      ]
+    },
+    
+    // Management/Audit logs
+    {
+      "pattern": "product=SmartCenter Server",
+      "rewrites": [
+        {"set": "class_uid", "value": "6002"},
+        {"set": "class_name", "value": "API Activity"},
+        {"set": "category_uid", "value": "6"},
+        {"set": "category_name", "value": "Application Activity"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Check Point SmartCenter"},
+        {"set": "metadata.product.vendor_name", "value": "Check Point"},
+        
+        // Actor
+        {"copy": "administrator", "to": "actor.user.name"},
+        {"copy": "client_name", "to": "actor.app_name"},
+        {"copy": "client_version", "to": "actor.app_version"},
+        {"copy": "src", "to": "actor.session.ip"},
+        
+        // Operation
+        {"copy": "operation", "to": "activity_name"},
+        {"copy": "objectname", "to": "resources.name"},
+        {"copy": "objecttype", "to": "resources.type"},
+        {"copy": "fieldschanges", "to": "resources.data"}
+      ]
+    },
+    
+    // Application Control logs
+    {
+      "pattern": "product=Application Control",
+      "rewrites": [
+        {"set": "class_uid", "value": "4002"},
+        {"set": "class_name", "value": "HTTP Activity"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Check Point Application Control"},
+        {"set": "metadata.product.vendor_name", "value": "Check Point"},
+        
+        // Application
+        {"copy": "app_name", "to": "app_name"},
+        {"copy": "app_id", "to": "app.uid"},
+        {"copy": "app_category", "to": "app.category"},
+        {"copy": "app_risk", "to": "app.risk_level"},
+        {"copy": "appi_name", "to": "app.feature.name"},
+        
+        // User
+        {"copy": "user", "to": "actor.user.name"},
+        {"copy": "matched_category", "to": "http_request.url.categories"}
+      ]
+    },
+    
+    // Anti-Bot/Threat Prevention logs
+    {
+      "pattern": "product=Anti-Bot",
+      "rewrites": [
+        {"set": "class_uid", "value": "2001"},
+        {"set": "class_name", "value": "Security Finding"},
+        {"set": "finding_info.types", "value": ["Malware", "Command and Control"]},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Check Point Anti-Bot"},
+        {"set": "metadata.product.vendor_name", "value": "Check Point"},
+        
+        // Malware info
+        {"copy": "malware_name", "to": "malware.name"},
+        {"copy": "malware_family", "to": "malware.classification.family"},
+        {"copy": "malware_action", "to": "activity_name"},
+        {"copy": "resource", "to": "malware.path"},
+        
+        // Severity
+        {"lookup": "severity", "map": {"Critical": 5, "High": 4, "Medium": 3, "Low": 2}, "to": "severity_id"},
+        {"copy": "severity", "to": "severity"},
+        
+        // Confidence
+        {"copy": "confidence_level", "to": "confidence"}
+      ]
+    }
+  ]
+}

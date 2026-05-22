@@ -1,0 +1,13 @@
+{
+  "columnNames": ["entity_id", "feature_name", "value"],
+  "rows": [
+    [".anna.schmidt", "featF_same", 16],
+    [".lisa.bauer", "featF_same", 9],
+    [".thomas.weber", "featF_same", 18],
+    ["admin.klaus.fischer", "featF_same", 17],
+    ["billing.clerk.peter.wolf", "featF_same", 19],
+    ["lab.tech.sarah.koch", "featF_same", 9],
+    ["nurse.maria.m\\u00fcller", "featF_same", 16],
+    ["pharmacist.hans.meyer", "featF_same", 17]
+  ]
+}

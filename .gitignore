@@ -6,5 +6,8 @@ node_modules/
 .next/
 frontend/out/
 pgdata/
-parsers/*.json
 data/
+
+# Parsers ARE committed in this fork (snapshot of the demo tenant).
+# .env still excluded for safety.
+tools/stormshield-verify/config.json

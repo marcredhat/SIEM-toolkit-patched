@@ -1,0 +1,33 @@
+{
+  attributes: {
+    "metadata.version":    "1.0.0",
+    "dataSource.vendor":   "Sophos",
+    "dataSource.name":     "Sophos EDR",
+    "dataSource.category": "security",
+    "Category": "security",
+    "metadata.product.vendor_name": "Sophos",
+    "metadata.product.name":        "Endpoint Detection and Response",
+    "metadata.log_provider":        "api",
+    "class_uid": 2001,
+    "class_name": "Security Finding",
+    "severity_id": 2,
+    "severity": "Low"
+  },
+
+  formats: [
+    {
+      format: ".*\\{.*\\}.*",
+      rewrites: [
+        { input: "message", output: "sophos.name", match: ".*\"name\":\\s*\"([^\"]+)\".*", replace: "$1" },
+        { input: "message", output: "sophos.type", match: ".*\"type\":\\s*\"([^\"]+)\".*", replace: "$1" },
+        { input: "message", output: "sophos.severity", match: ".*\"severity\":\\s*\"([^\"]+)\".*", replace: "$1" },
+        { input: "message", output: "sophos.group", match: ".*\"group\":\\s*\"([^\"]+)\".*", replace: "$1" },
+        { input: "message", output: "sophos.dhost", match: ".*\"dhost\":\\s*\"([^\"]+)\".*", replace: "$1" },
+        { input: "message", output: "sophos.suser", match: ".*\"suser\":\\s*\"([^\"]+)\".*", replace: "$1" },
+        { input: "message", output: "sophos.endpoint_id", match: ".*\"endpoint_id\":\\s*\"([^\"]+)\".*", replace: "$1" },
+        { input: "message", output: "sophos.customer_id", match: ".*\"customer_id\":\\s*\"([^\"]+)\".*", replace: "$1" },
+        { input: "message", output: "src_endpoint.ip", match: ".*\"ip\":\\s*\"([^\"]+)\".*", replace: "$1" }
+      ]
+    }
+  ]
+}

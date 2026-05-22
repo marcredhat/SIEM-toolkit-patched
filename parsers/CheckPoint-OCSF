@@ -1,0 +1,277 @@
+{
+  // Check Point pipe-delimited parser — OCSF v1.3.0  (v3: Gateway + Mgmt)
+  //
+  // Discrimination is done via the `format:` string (Scalyr ignores `match:`).
+  // Rules are ordered most-specific → most-generic with halt:true.
+  attributes: {
+    "metadata.version":             "1.3.0",
+    "metadata.product.vendor_name": "Check Point",
+    "metadata.product.name":        "Quantum Security",
+    "metadata.log_provider":        "syslog",
+    "Category":                     "security",
+    "dataSource.vendor":            "Check Point",
+    "dataSource.name":              "Check Point"
+  },
+
+  patterns: {
+    word:  "[^|]+",
+    num:   "\\d+",
+    ip:    "\\d+\\.\\d+\\.\\d+\\.\\d+"
+  },
+
+  formats: [
+
+    // 1. MGMT — SmartCenter Server
+    {
+      id: "cp_mgmt_smartcenter",
+      attributes: {
+        "dataSource.category":  "management",
+        category_uid: 6, category_name: "Application Activity",
+        class_uid: 6003, class_name: "API Activity",
+        activity_id: 3, activity_name: "Update",
+        type_uid: 600303,
+        severity_id: 2, severity: "Low",
+        status_id: 1, status: "Success"
+      },
+      format: ".*[|]product=SmartCenter Server.*",
+      halt: true,
+      rewrites: [
+        { input: "message",   output: "user_name",     match: ".*[|]administrator=([^|]*).*", replace: "$1" },
+        { input: "message",   output: "src_ip",        match: ".*[|]src=(\\d+\\.\\d+\\.\\d+\\.\\d+).*", replace: "$1" },
+        { input: "message",   output: "device_host",   match: ".*[|]origin=([^|]+).*",        replace: "$1" },
+        { input: "message",   output: "object_name",   match: ".*[|]objectname=([^|]+).*",    replace: "$1" },
+        { input: "message",   output: "object_type",   match: ".*[|]objecttype=([^|]+).*",    replace: "$1" },
+        { input: "message",   output: "client_name",   match: ".*[|]client_name=([^|]+).*",   replace: "$1" },
+        { input: "message",   output: "operation",     match: ".*[|]operation=([^|]+).*",    replace: "$1" },
+        { input: "operation", output: "finding_title", match: "(.*)", replace: "Check Point Management Audit: $1" }
+      ]
+    },
+
+    // 2. MGMT — Multi-Domain Server
+    {
+      id: "cp_mgmt_mds",
+      attributes: {
+        "dataSource.category":  "management",
+        category_uid: 6, category_name: "Application Activity",
+        class_uid: 6003, class_name: "API Activity",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 600301,
+        severity_id: 2, severity: "Low",
+        status_id: 1, status: "Success"
+      },
+      format: ".*[|]product=Multi-Domain Server.*",
+      halt: true,
+      rewrites: [
+        { input: "message",   output: "user_name",     match: ".*[|]administrator=([^|]*).*", replace: "$1" },
+        { input: "message",   output: "src_ip",        match: ".*[|]src=(\\d+\\.\\d+\\.\\d+\\.\\d+).*", replace: "$1" },
+        { input: "message",   output: "device_host",   match: ".*[|]origin=([^|]+).*",        replace: "$1" },
+        { input: "message",   output: "operation",     match: ".*[|]operation=([^|]+).*",    replace: "$1" },
+        { input: "operation", output: "finding_title", match: "(.*)", replace: "Check Point Management Audit: $1" }
+      ]
+    },
+
+    // 3. MGMT — Endpoint Security Mgmt
+    {
+      id: "cp_mgmt_endpoint",
+      attributes: {
+        "dataSource.category":  "management",
+        category_uid: 6, category_name: "Application Activity",
+        class_uid: 6003, class_name: "API Activity",
+        activity_id: 3, activity_name: "Update",
+        type_uid: 600303,
+        severity_id: 2, severity: "Low",
+        status_id: 1, status: "Success"
+      },
+      format: ".*[|]product=Endpoint Security Management.*",
+      halt: true,
+      rewrites: [
+        { input: "message",   output: "user_name",     match: ".*[|]administrator=([^|]*).*", replace: "$1" },
+        { input: "message",   output: "src_ip",        match: ".*[|]src=(\\d+\\.\\d+\\.\\d+\\.\\d+).*", replace: "$1" },
+        { input: "message",   output: "device_host",   match: ".*[|]origin=([^|]+).*",        replace: "$1" },
+        { input: "message",   output: "object_name",   match: ".*[|]objectname=([^|]+).*",    replace: "$1" },
+        { input: "message",   output: "operation",     match: ".*[|]operation=([^|]+).*",    replace: "$1" },
+        { input: "operation", output: "finding_title", match: "(.*)", replace: "Check Point Management Audit: $1" }
+      ]
+    },
+
+    // 4. IPS — discriminator: protection_type=ips
+    {
+      id: "cp_ips",
+      attributes: {
+        "dataSource.category":  "ids",
+        category_uid: 2, category_name: "Findings",
+        class_uid: 2004, class_name: "Detection Finding",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 200401,
+        severity_id: 4, severity: "High",
+        disposition_id: 2, disposition: "Blocked"
+      },
+      format: ".*[|]protection_type=ips.*",
+      halt: true,
+      rewrites: [
+        { input: "message",     output: "src_ip",        match: ".*[|]src=(\\d+\\.\\d+\\.\\d+\\.\\d+).*", replace: "$1" },
+        { input: "message",     output: "dst_ip",        match: ".*[|]dst=(\\d+\\.\\d+\\.\\d+\\.\\d+).*", replace: "$1" },
+        { input: "message",     output: "src_port",      match: ".*[|]s_port=(\\d+).*",                  replace: "$1" },
+        { input: "message",     output: "dst_port",      match: ".*[|]service=(\\d+).*",                 replace: "$1" },
+        { input: "message",     output: "attack",        match: ".*[|]attack=([^|]+).*",                 replace: "$1" },
+        { input: "message",     output: "protection",    match: ".*[|]protection_name=([^|]+).*",        replace: "$1" },
+        { input: "message",     output: "cp_severity",   match: ".*[|]severity=([^|]+).*",               replace: "$1" },
+        { input: "cp_severity", output: "severity",      match: "(?si)^\\s*critical\\s*$", replace: "Critical" },
+        { input: "cp_severity", output: "severity_id",   match: "(?si)^\\s*critical\\s*$", replace: "5" },
+        { input: "attack",      output: "finding_title", match: "(?i).*", replace: "Check Point IPS: $0" }
+      ]
+    },
+
+    // 5. ANTI-BOT / AV / TE — discriminator: malware_family=…
+    {
+      id: "cp_antibot_av",
+      attributes: {
+        "dataSource.category":  "antivirus",
+        category_uid: 2, category_name: "Findings",
+        class_uid: 2004, class_name: "Detection Finding",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 200401,
+        severity_id: 5, severity: "Critical",
+        disposition_id: 2, disposition: "Blocked"
+      },
+      format: ".*[|]malware_family=$malware_family=word$.*",
+      halt: true,
+      rewrites: [
+        { input: "message",      output: "src_ip",         match: ".*[|]src=(\\d+\\.\\d+\\.\\d+\\.\\d+).*", replace: "$1" },
+        { input: "message",      output: "dst_ip",         match: ".*[|]dst=(\\d+\\.\\d+\\.\\d+\\.\\d+).*", replace: "$1" },
+        { input: "message",      output: "malware_name",   match: ".*[|]malware_name=([^|]+).*",            replace: "$1" },
+        { input: "message",      output: "malware_action", match: ".*[|]malware_action=([^|]+).*",          replace: "$1" },
+        { input: "message",      output: "ioc_url",        match: ".*[|]resource=([^|]+).*",                replace: "$1" },
+        { input: "message",      output: "cp_action",      match: ".*[|]action=([^|]+).*",                  replace: "$1" },
+        { input: "cp_action",    output: "disposition",    match: "(?i)^detect$", replace: "Allowed" },
+        { input: "cp_action",    output: "disposition_id", match: "(?i)^detect$", replace: "1" },
+        { input: "malware_name", output: "finding_title",  match: "(?i).*", replace: "Check Point Malware: $0" }
+      ]
+    },
+
+    // 6. APP CTRL / URL FILTERING — discriminator: app_name=…
+    {
+      id: "cp_app_control",
+      attributes: {
+        "dataSource.category":  "application",
+        category_uid: 4, category_name: "Network Activity",
+        class_uid: 4002, class_name: "HTTP Activity",
+        activity_id: 1, activity_name: "Connection",
+        type_uid: 400201,
+        severity_id: 2, severity: "Low",
+        disposition_id: 1, disposition: "Allowed"
+      },
+      format: ".*[|]app_name=$app_name=word$.*",
+      halt: true,
+      rewrites: [
+        { input: "message",   output: "src_ip",         match: ".*[|]src=(\\d+\\.\\d+\\.\\d+\\.\\d+).*", replace: "$1" },
+        { input: "message",   output: "dst_ip",         match: ".*[|]dst=(\\d+\\.\\d+\\.\\d+\\.\\d+).*", replace: "$1" },
+        { input: "message",   output: "src_port",       match: ".*[|]s_port=(\\d+).*",                  replace: "$1" },
+        { input: "message",   output: "dst_port",       match: ".*[|]service=(\\d+).*",                 replace: "$1" },
+        { input: "message",   output: "app_category",   match: ".*[|]app_category=([^|]+).*",           replace: "$1" },
+        { input: "message",   output: "app_risk",       match: ".*[|]app_risk=([^|]+).*",               replace: "$1" },
+        { input: "message",   output: "user_name",      match: ".*[|]user=([^|]+).*",                   replace: "$1" },
+        { input: "message",   output: "url",            match: ".*[|]resource=([^|]+).*",               replace: "$1" },
+        { input: "message",   output: "cp_action",      match: ".*[|]action=([^|]+).*",                 replace: "$1" },
+        { input: "cp_action", output: "disposition",    match: "(?i)^drop$|^reject$", replace: "Blocked" },
+        { input: "cp_action", output: "disposition_id", match: "(?i)^drop$|^reject$", replace: "2" }
+      ]
+    },
+
+    // 7. FW Drop fallback — discriminator: action=Drop
+    {
+      id: "cp_drop",
+      attributes: {
+        "dataSource.category":  "firewall",
+        category_uid: 2, category_name: "Findings",
+        class_uid: 2004, class_name: "Detection Finding",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 200401,
+        finding_title: "Check Point Firewall Drop",
+        severity_id: 3, severity: "Medium",
+        disposition_id: 2, disposition: "Blocked"
+      },
+      format: ".*[|]action=Drop.*",
+      halt: true,
+      rewrites: [
+        { input: "message", output: "src_ip",   match: ".*[|]src=(\\d+\\.\\d+\\.\\d+\\.\\d+).*", replace: "$1" },
+        { input: "message", output: "dst_ip",   match: ".*[|]dst=(\\d+\\.\\d+\\.\\d+\\.\\d+).*", replace: "$1" },
+        { input: "message", output: "src_port", match: ".*[|]s_port=(\\d+).*",                   replace: "$1" },
+        { input: "message", output: "dst_port", match: ".*[|]service=(\\d+).*",                  replace: "$1" },
+        { input: "message", output: "protocol", match: ".*[|]proto=([^|]+).*",                    replace: "$1" }
+      ]
+    },
+
+    // 8. FW Reject — discriminator: action=Reject
+    {
+      id: "cp_reject",
+      attributes: {
+        "dataSource.category":  "firewall",
+        category_uid: 2, category_name: "Findings",
+        class_uid: 2004, class_name: "Detection Finding",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 200401,
+        finding_title: "Check Point Firewall Reject",
+        severity_id: 3, severity: "Medium",
+        disposition_id: 2, disposition: "Blocked"
+      },
+      format: ".*[|]action=Reject.*",
+      halt: true,
+      rewrites: [
+        { input: "message", output: "src_ip",   match: ".*[|]src=(\\d+\\.\\d+\\.\\d+\\.\\d+).*", replace: "$1" },
+        { input: "message", output: "dst_ip",   match: ".*[|]dst=(\\d+\\.\\d+\\.\\d+\\.\\d+).*", replace: "$1" },
+        { input: "message", output: "src_port", match: ".*[|]s_port=(\\d+).*",                   replace: "$1" },
+        { input: "message", output: "dst_port", match: ".*[|]service=(\\d+).*",                  replace: "$1" },
+        { input: "message", output: "protocol", match: ".*[|]proto=([^|]+).*",                    replace: "$1" }
+      ]
+    },
+
+    // 9. FW Accept — discriminator: action=Accept
+    {
+      id: "cp_accept",
+      attributes: {
+        "dataSource.category":  "firewall",
+        category_uid: 4, category_name: "Network Activity",
+        class_uid: 4001, class_name: "Network Activity",
+        activity_id: 6, activity_name: "Traffic",
+        type_uid: 400106,
+        disposition_id: 1, disposition: "Allowed",
+        severity_id: 1, severity: "Informational"
+      },
+      format: ".*[|]action=Accept.*",
+      halt: true,
+      rewrites: [
+        { input: "message", output: "src_ip",   match: ".*[|]src=(\\d+\\.\\d+\\.\\d+\\.\\d+).*", replace: "$1" },
+        { input: "message", output: "dst_ip",   match: ".*[|]dst=(\\d+\\.\\d+\\.\\d+\\.\\d+).*", replace: "$1" },
+        { input: "message", output: "src_port", match: ".*[|]s_port=(\\d+).*",                   replace: "$1" },
+        { input: "message", output: "dst_port", match: ".*[|]service=(\\d+).*",                  replace: "$1" },
+        { input: "message", output: "protocol", match: ".*[|]proto=([^|]+).*",                    replace: "$1" }
+      ]
+    },
+
+    // 10. CATCH-ALL — any Check Point log not matched above
+    {
+      id: "cp_catchall",
+      attributes: {
+        "dataSource.category":  "security",
+        category_uid: 5, category_name: "Discovery",
+        class_uid: 5001, class_name: "Device Inventory Info",
+        activity_id: 1, activity_name: "Log",
+        type_uid: 500101,
+        severity_id: 1, severity: "Informational"
+      },
+      format: ".*time=\\d+[|].*",
+      halt: true,
+      rewrites: [
+        { input: "message", output: "src_ip",      match: ".*[|]src=(\\d+\\.\\d+\\.\\d+\\.\\d+).*", replace: "$1" },
+        { input: "message", output: "dst_ip",      match: ".*[|]dst=(\\d+\\.\\d+\\.\\d+\\.\\d+).*", replace: "$1" },
+        { input: "message", output: "src_port",    match: ".*[|]s_port=(\\d+).*",                   replace: "$1" },
+        { input: "message", output: "dst_port",    match: ".*[|]service=(\\d+).*",                  replace: "$1" },
+        { input: "message", output: "protocol",    match: ".*[|]proto=([^|]+).*",                   replace: "$1" },
+        { input: "message", output: "cp_product",  match: ".*[|]product=([^|]+).*",                 replace: "$1" },
+        { input: "message", output: "cp_action",   match: ".*[|]action=([^|]+).*",                  replace: "$1" }
+      ]
+    }
+
+  ]
+}

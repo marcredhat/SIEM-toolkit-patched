@@ -8,18 +8,68 @@ import re
 router = APIRouter()
 
 
+PARSERS_DIR = "/app/parsers"
+
+
 @router.get("/parsers")
 def list_parser_files():
     """List parser filenames available under /app/parsers/ for the Test Runner."""
-    parsers_dir = "/app/parsers"
     try:
         names = sorted(
-            e.name for e in os.scandir(parsers_dir)
+            e.name for e in os.scandir(PARSERS_DIR)
             if e.is_file() and not e.name.startswith(".")
         )
     except FileNotFoundError:
         names = []
     return {"parsers": names, "count": len(names)}
+
+
+@router.post("/sync-from-sdl")
+async def sync_parsers_from_sdl():
+    """Download every parser file under /logParsers/ on the SDL tenant into
+    /app/parsers/. After this call returns, the Parser Test Runner dropdown
+    will include all tenant parsers (including custom ones).
+
+    Requires SDL_CONFIG_READ_KEY in .env (Configuration Read scope on the
+    Data Lake API key).
+    """
+    if not s1_client.SDL_CONFIG_READ_KEY:
+        raise HTTPException(
+            400,
+            "SDL_CONFIG_READ_KEY is not set in .env. Generate a Data Lake API key "
+            "with 'Configuration Read' scope in the S1 console and add it to .env."
+        )
+
+    try:
+        names = await s1_client.list_sdl_parsers()
+    except Exception as e:
+        raise HTTPException(502, f"SDL listFiles failed: {e}")
+
+    os.makedirs(PARSERS_DIR, exist_ok=True)
+    downloaded: list[str] = []
+    errors: list[dict] = []
+
+    for name in names:
+        # The path on SDL is /logParsers/<name>; we write to /app/parsers/<sanitized-name>.
+        safe_name = name.replace("/", "_")
+        try:
+            resp = await s1_client.get_sdl_parser(name)
+            content = resp.get("content")
+            if content is None:
+                errors.append({"parser": name, "error": "no content field in response"})
+                continue
+            with open(os.path.join(PARSERS_DIR, safe_name), "w", encoding="utf-8") as fh:
+                fh.write(content)
+            downloaded.append(safe_name)
+        except Exception as e:
+            errors.append({"parser": name, "error": str(e) or e.__class__.__name__})
+
+    return {
+        "downloaded": len(downloaded),
+        "parsers": downloaded,
+        "errors": errors,
+        "directory": PARSERS_DIR,
+    }
 
 
 def _date_range_hours(hours: int) -> tuple[str, str]:
@@ -38,7 +88,6 @@ class SampleEventsRequest(BaseModel):
     source: str
     limit: int = 20
     hours: int = 1
-    filter_mode: str = "broad"  # reserved for future use
 
 
 class FieldPopulationRequest(BaseModel):
@@ -108,41 +157,22 @@ def _flatten_event(event: dict) -> dict:
 def _extract_format_strings(content: str) -> list[str]:
     """
     Extract SDL format string values from augmented-JSON parser content.
-    Handles both:
-      - quoted keys:   "format": "..."   (valid JSON)
-      - unquoted keys:  format: "..."    (SDL augmented-JSON)
-    Skips commented-out lines (// ...).
+    Matches:  format: "..."   or   "format": "..."   (SDL parser files are
+    JS-style JSON: keys may or may not be quoted). Supports escaped quotes.
     """
-    pattern = re.compile(r'(?<!//)\"?format\"?\s*:\s*"((?:[^"\\]|\\.)*)"')
-    results = []
-    for line in content.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("//"):
-            continue
-        results.extend(pattern.findall(line))
-    return results
+    pattern = re.compile(r'(?:"format"|format)\s*:\s*"((?:[^"\\]|\\.)*)"')
+    return pattern.findall(content)
 
 
 def _sdl_format_to_regex(fmt: str) -> tuple[re.Pattern, dict[str, str]]:
     """
     Convert an SDL format string to a compiled Python regex.
 
-    SDL format strings may start with '.*,' to absorb a syslog header.  When
-    used with re.search that prefix is redundant AND harmful (it forces a comma
-    before the first named field, which won't exist when the log starts with
-    the field directly).  We strip the leading '.*,' so re.search can anchor
-    to the first real field at any position in the line.
+    Returns (compiled_pattern, py_group_to_sdl_field) mapping so callers can
+    translate group names back to the original SDL field names.
 
-    Internal '.*' wildcards (field separators for skipped fields) are kept as
-    non-greedy '.*?' so they don't consume adjacent named-field values.
-
-    Returns (compiled_pattern, py_group_to_sdl_field).
     Raises re.error if the resulting pattern cannot be compiled.
     """
-    # Strip leading/trailing .* wildcards — re.search handles positioning
-    fmt = re.sub(r'^(\.\*,?)+', '', fmt)
-    fmt = re.sub(r'(,?\.\*)+$', '', fmt)
-
     # Split on $...$ tokens
     token_pattern = re.compile(r'\$([^$]+)\$')
     parts = token_pattern.split(fmt)
@@ -152,25 +182,19 @@ def _sdl_format_to_regex(fmt: str) -> tuple[re.Pattern, dict[str, str]]:
     py_group_to_sdl: dict[str, str] = {}
     seen_groups: dict[str, int] = {}
 
-    def _escape_literal(s: str) -> str:
-        """Escape literal text but keep internal .* as non-greedy wildcards."""
-        segments = re.split(r'(\.\*)', s)
-        return ''.join(r'.*?' if seg == '.*' else re.escape(seg) for seg in segments)
-
     for i, part in enumerate(parts):
         if i % 2 == 0:
-            # Literal text (possibly containing .* wildcards)
-            regex_parts.append(_escape_literal(part))
+            # Literal text
+            regex_parts.append(re.escape(part))
         else:
             # Token: either "field.name=PATTERN" or just "field.name"
             if '=' in part:
                 field_name, pattern = part.split('=', 1)
             else:
                 field_name = part
-                # Default: match any non-comma chars (SDL CSV fields)
-                pattern = r'[^,]*'
+                pattern = r'[^\s]+'
 
-            # Build a valid Python named-group identifier
+            # Build a valid Python group name
             safe = re.sub(r'[.\-]', '_', field_name)
             if safe in seen_groups:
                 seen_groups[safe] += 1
@@ -181,52 +205,94 @@ def _sdl_format_to_regex(fmt: str) -> tuple[re.Pattern, dict[str, str]]:
             py_group_to_sdl[safe] = field_name
             regex_parts.append(f'(?P<{safe}>{pattern})')
 
-    compiled = re.compile(''.join(regex_parts), re.IGNORECASE | re.DOTALL)
+    compiled = re.compile(''.join(regex_parts), re.IGNORECASE)
     return compiled, py_group_to_sdl
+
+
+# ---------------------------------------------------------------------------
+# SDL parser helpers: pattern refs, key=value scanner, rewrites
+# ---------------------------------------------------------------------------
+
+def _extract_patterns_block(content: str) -> dict[str, str]:
+    """Extract the top-level `patterns: { name: "regex", ... }` block."""
+    m = re.search(r'patterns\s*:\s*\{', content)
+    if not m:
+        return {}
+    depth, i = 1, m.end()
+    while i < len(content) and depth > 0:
+        c = content[i]
+        if c == '{':
+            depth += 1
+        elif c == '}':
+            depth -= 1
+        i += 1
+    block = content[m.end():i - 1]
+    return dict(re.findall(r'([A-Za-z_]\w*)\s*:\s*"((?:[^"\\]|\\.)*)"', block))
+
+
+def _resolve_pattern_refs(fmt: str, patterns: dict[str, str]) -> str:
+    """Replace $var=PatternName$ with $var=<resolved>$ when PatternName is defined."""
+    if not patterns:
+        return fmt
+
+    def sub(m: re.Match) -> str:
+        token = m.group(1)
+        if '=' in token:
+            name, pat = token.split('=', 1)
+            if pat in patterns:
+                return f"${name}={patterns[pat]}$"
+        return m.group(0)
+    return re.sub(r'\$([^$]+)\$', sub, fmt)
+
+
+_KV_TOKEN_RE = re.compile(r'\$_\$=\$([^$]+)\._\$')
+_KV_SCAN_RE = re.compile(r'([A-Za-z_][\w.-]*)=(?:"((?:[^"\\]|\\.)*)"|([^\s"]+))')
+
+
+def _is_kv_format(fmt: str) -> bool:
+    """SDL key=value scanner idiom: $_$=$<prefix>._$."""
+    return bool(_KV_TOKEN_RE.search(fmt))
+
+
+def _scan_kv(line: str, fmt: str) -> dict[str, str]:
+    """Extract key=value pairs (supports quoted values) and prefix the keys."""
+    m = _KV_TOKEN_RE.search(fmt)
+    prefix = m.group(1) if m else "unmapped"
+    out: dict[str, str] = {}
+    for km in _KV_SCAN_RE.finditer(line):
+        k = km.group(1)
+        v = km.group(2) if km.group(2) is not None else km.group(3)
+        out[f"{prefix}.{k}"] = v
+    return out
+
+
+_REWRITE_RE = re.compile(
+    # JS-style or strict JSON: keys may or may not be quoted, in any order with
+    # commas between. We assume the canonical SDL ordering input/output/match/replace.
+    r'\{\s*(?:"input"|input)\s*:\s*"([^"]+)"\s*,'
+    r'\s*(?:"output"|output)\s*:\s*"([^"]+)"\s*,'
+    r'\s*(?:"match"|match)\s*:\s*"((?:[^"\\]|\\.)*)"\s*,'
+    r'\s*(?:"replace"|replace)\s*:\s*"((?:[^"\\]|\\.)*)"',
+    re.DOTALL,
+)
+
+
+def _extract_rewrites(content: str) -> list[dict]:
+    return [
+        {"input": m.group(1), "output": m.group(2),
+         "match": m.group(3), "replace": m.group(4)}
+        for m in _REWRITE_RE.finditer(content)
+    ]
+
+
+def _to_py_backref(s: str) -> str:
+    """Translate SDL $0/$N backrefs to Python \\g<0>/\\g<N>."""
+    return re.sub(r"\$(\d+)", lambda mm: f"\\g<{mm.group(1)}>", s)
 
 
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
-
-@router.post("/sample-unlabelled")
-async def sample_unlabelled(req: SampleEventsRequest):
-    """Return a sample of events that have no dataSource.name — these need parsers.
-    Also runs a count query so the caller can update the banner with the real total.
-    """
-    import asyncio
-    from routers import coverage as _coverage
-
-    filter_expr = "!(dataSource.name = *) !(source = 'scalyr')"
-    from_dt, to_dt = _date_range_hours(req.hours)
-
-    sample_result, count_result = await asyncio.gather(
-        s1_client.run_powerquery(f"{filter_expr} | limit {req.limit}", from_dt, to_dt),
-        s1_client.run_powerquery(f"{filter_expr} | group events=count()", from_dt, to_dt, max_count=50_000_000),
-    )
-
-    rows = sample_result if isinstance(sample_result, list) else (sample_result.get("rows") or sample_result.get("events") or [])
-
-    events = [_flatten_event(row) for row in rows]
-    non_empty_keys: set = set()
-    for ev in events:
-        for k, v in ev.items():
-            if v is not None and v != "" and v != "null":
-                non_empty_keys.add(k)
-    events = [{k: v for k, v in ev.items() if k in non_empty_keys} for ev in events]
-
-    count_rows = count_result.get("events", []) if isinstance(count_result, dict) else []
-    total = count_rows[0].get("events", 0) if count_rows else 0
-    _coverage._unlabelled_event_count = total
-
-    return {
-        "events": events,
-        "count": len(events),
-        "total": total,
-        "hours": req.hours,
-        "columns_seen": sorted(non_empty_keys),
-    }
-
 
 @router.post("/sample-events")
 async def sample_events(req: SampleEventsRequest):
@@ -262,39 +328,21 @@ async def field_population(req: FieldPopulationRequest):
     events = [_flatten_event(row) for row in rows]
 
     if not events:
-        return {
-            "source": req.source,
-            "total_sampled": 0,
-            "hours": req.hours,
-            "fields": [],
-            "fields_seen_in_sample": [],
-            "message": f"No events found for source '{req.source}' in the last {req.hours} hours.",
-        }
+        raise HTTPException(status_code=404, detail=f"No events found for source '{req.source}' in the last {req.hours} hours.")
 
     total = len(events)
-    _empty_scalars = {None, "", "null"}
-
-    def _is_empty(val):
-        """Return True if the value counts as unpopulated."""
-        if val is None:
-            return True
-        if isinstance(val, list):
-            return len(val) == 0
-        if isinstance(val, dict):
-            return len(val) == 0
-        return val in _empty_scalars
+    _empty = {None, "", "null"}
 
     # Collect all field names seen across the sample (useful for surfacing what IS there)
     all_seen_fields = sorted({k for ev in events for k in ev})
 
-    all_seen_fields_set = set(all_seen_fields)
-
     field_stats = []
     for field in req.fields:
-        # Skip fields that don't appear anywhere in the sample
-        if field not in all_seen_fields_set:
-            continue
-        populated = sum(1 for ev in events if not _is_empty(ev.get(field)))
+        # dataSource.name is always 100% — we filtered by it; Scalyr just doesn't echo it back
+        if field == "dataSource.name":
+            populated = total
+        else:
+            populated = sum(1 for ev in events if ev.get(field) not in _empty)
         rate = round((populated / total) * 100, 1)
         field_stats.append({
             "field": field,
@@ -303,8 +351,8 @@ async def field_population(req: FieldPopulationRequest):
             "rate": rate,
         })
 
-    # Sort descending by rate (best coverage first)
-    field_stats.sort(key=lambda x: x["rate"], reverse=True)
+    # Sort ascending by rate (worst coverage first)
+    field_stats.sort(key=lambda x: x["rate"])
 
     return {
         "source": req.source,
@@ -339,10 +387,7 @@ async def test_parser(req: TestParserRequest):
     # The regex-based path can't model that — handle it explicitly so users
     # can test JSON-shaped logs against JSON-mode parsers.
     log_input = req.log_line.strip()
-    # Only enter JSON mode if the log content actually looks like JSON.
-    # Don't force it based on the parser type alone — a JSON-capable parser
-    # should still fall through to regex matching for non-JSON inputs.
-    is_json_mode = log_input.startswith("{") or log_input.startswith("[")
+    is_json_mode = any("parse=json" in f for f in format_strings) or log_input.startswith("{")
     if is_json_mode:
         import json as _json
         # Support multi-line input (one JSON object per line, or a JSON array)
@@ -394,24 +439,18 @@ async def test_parser(req: TestParserRequest):
         # Use the first payload for the detail table; report totals.
         payload = payloads[0]
         extracted = _flatten_dict(payload)
-        # SDL's parse=json puts all keys into unmapped.* namespace first, then
-        # rewrites map unmapped.X -> ocsf.field.  Mirror that so rewrites fire.
-        unmapped_aliases = {f"unmapped.{k}": v for k, v in extracted.items()}
-        extracted_with_unmapped = {**extracted, **unmapped_aliases}
-
         # Apply lightweight rewrites if present (input/output/match/replace blocks).
         # We only handle simple literal/regex matches with $0 or string replacements;
         # this is best-effort, intended for quick visual verification.
         rewrites_applied = []
-        # Handle both quoted keys ("input":) and unquoted keys (input:)
         rewrite_re = re.compile(
-            r'\{\s*"?input"?\s*:\s*"([^"]+)"\s*,\s*"?output"?\s*:\s*"([^"]+)"\s*,\s*"?match"?\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"?replace"?\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}',
+            r'\{\s*input:\s*"([^"]+)"\s*,\s*output:\s*"([^"]+)"\s*,\s*match:\s*"((?:[^"\\]|\\.)*)"\s*,\s*replace:\s*"((?:[^"\\]|\\.)*)"\s*\}',
             re.DOTALL,
         )
         derived: dict[str, str] = {}
         for m in rewrite_re.finditer(content):
             in_field, out_field, match_pat, replace_val = m.group(1), m.group(2), m.group(3), m.group(4)
-            src_val = extracted_with_unmapped.get(in_field)
+            src_val = extracted.get(in_field)
             if src_val is None:
                 continue
             try:
@@ -420,10 +459,7 @@ async def test_parser(req: TestParserRequest):
                 continue
             if not m2:
                 continue
-            # SDL uses $0 for whole match, $1.. for groups. Translate to Python
-            # \g<0>, \g<1>, ... so re.sub doesn't read \0 as a null byte.
-            def _to_py_backref(s: str) -> str:
-                return re.sub(r"\$(\d+)", lambda mm: f"\\g<{mm.group(1)}>", s)
+            # SDL uses $0/$N backrefs; module-level _to_py_backref translates them.
             try:
                 val = re.sub(match_pat, _to_py_backref(replace_val), str(src_val), count=1)
             except re.error:
@@ -452,57 +488,82 @@ async def test_parser(req: TestParserRequest):
             "showing_payload": 1,
         }
 
-    # ── Regex format-string path ─────────────────────────────────────────────
-    def _try_prefix_match(compiled: re.Pattern, py_to_sdl: dict, log_line: str):
-        """
-        Try the full pattern; if it doesn't match, progressively shorten from
-        the right (group by group) until we get a match.  This handles logs
-        that don't include all the trailing optional fields the parser defines.
-        Returns (match, truncated) or (None, False).
-        """
-        m = compiled.search(log_line)
-        if m:
-            return m, False
-
-        # Shorten pattern by removing trailing named groups one at a time
-        p = compiled.pattern
-        # Find all (?P<name>...) group end positions (right to left)
-        group_ends = [m2.end() for m2 in re.finditer(r'\(\?P<[^>]+>[^)]*\)', p)]
-        for end in reversed(group_ends[1:]):   # keep at least 1 group
-            try:
-                shorter = re.compile(p[:end], re.IGNORECASE | re.DOTALL)
-                m2 = shorter.search(log_line)
-                if m2:
-                    return m2, True
-            except re.error:
-                continue
-        return None, False
+    # ── Regex / KV / pattern-ref path ───────────────────────────────────────
+    # Accumulate fields across all matching formats so that a parser like
+    # Stormshield (one format for the timestamp + a KV scanner for the rest +
+    # a third format to drive rewrites) returns a complete picture.
+    patterns_block = _extract_patterns_block(content)
+    extracted_fields: dict[str, str] = {}
+    formats_matched: list[str] = []
 
     for fmt in format_strings:
+        resolved = _resolve_pattern_refs(fmt, patterns_block)
+
+        # SDL key=value scanner idiom (handles `$_$=$prefix._$` w/ repeat:true)
+        if _is_kv_format(resolved):
+            kv = _scan_kv(req.log_line, resolved)
+            if kv:
+                extracted_fields.update(kv)
+                formats_matched.append(fmt)
+            continue
+
         try:
-            compiled, py_to_sdl = _sdl_format_to_regex(fmt)
+            compiled, py_to_sdl = _sdl_format_to_regex(resolved)
         except re.error:
             continue
 
-        match, truncated = _try_prefix_match(compiled, py_to_sdl, req.log_line)
+        match = compiled.search(req.log_line)
         if match:
-            fields = [
-                {"field": py_to_sdl.get(group, group), "value": value}
-                for group, value in match.groupdict().items()
-                if value is not None and value != ""
-            ]
-            return {
-                "parser_name": req.parser_name,
-                "matched": True,
-                "mode": "regex",
-                "format_matched": fmt[:120] + ("…" if len(fmt) > 120 else ""),
-                "fields": fields,
-                "note": "Partial match — log has fewer fields than the full parser format" if truncated else None,
-            }
+            for group, value in match.groupdict().items():
+                if value is None:
+                    continue
+                extracted_fields[py_to_sdl.get(group, group)] = value
+            formats_matched.append(fmt)
 
+    if not extracted_fields:
+        return {
+            "parser_name": req.parser_name,
+            "matched": False,
+            "message": (
+                "No format pattern matched. This parser may use SDL features "
+                "the test runner doesn't model (e.g. dottedJson, grok, multi-line). "
+                "Fields can still be parsed correctly at ingest time."
+            ),
+            "fields": [],
+        }
+
+    # Apply rewrites declared anywhere in the parser file.
+    derived: dict[str, str] = {}
+    rewrites_applied = []
+    for rw in _extract_rewrites(content):
+        src_val = extracted_fields.get(rw["input"])
+        if src_val is None:
+            continue
+        try:
+            if not re.search(rw["match"], str(src_val)):
+                continue
+            val = re.sub(rw["match"], _to_py_backref(rw["replace"]), str(src_val), count=1)
+        except re.error:
+            continue
+        derived[rw["output"]] = val
+        rewrites_applied.append({
+            "input": rw["input"], "input_value": src_val,
+            "output": rw["output"], "matched_on": rw["match"], "result": val,
+        })
+
+    fields = (
+        [{"field": k, "value": v, "source": "extract"}
+         for k, v in sorted(extracted_fields.items())]
+        + [{"field": k, "value": v, "source": "rewrite"}
+           for k, v in sorted(derived.items())]
+    )
     return {
         "parser_name": req.parser_name,
-        "matched": False,
-        "message": "No format pattern matched. Check that the log includes the log-type keyword (e.g. TRAFFIC, THREAT) and enough comma-separated fields.",
-        "fields": [],
+        "matched": True,
+        "mode": "regex",
+        "format_matched": " + ".join(formats_matched) or "(none)",
+        "fields": fields,
+        "rewrites_applied": rewrites_applied,
+        "extracted_count": len(extracted_fields),
+        "derived_count": len(derived),
     }

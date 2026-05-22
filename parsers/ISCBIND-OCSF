@@ -1,0 +1,90 @@
+{
+  // ISC BIND DNS query log parser — OCSF v1.3.0
+  attributes: {
+    "metadata.version":             "1.3.0",
+    "metadata.product.vendor_name": "ISC",
+    "metadata.product.name":        "BIND",
+    "metadata.log_provider":        "syslog",
+    "Category":               "network",
+    "dataSource.vendor":      "ISC",
+    "dataSource.name":        "BIND",
+    "dataSource.category":    "dns",
+    "category_uid":           4,
+    "category_name":          "Network Activity",
+    "class_uid":              4003,
+    "class_name":             "DNS Activity",
+    "activity_id":            1,
+    "activity_name":          "Query",
+    "type_uid":               400301,
+    "status_id":              1,
+    "status":                 "Success",
+    "severity_id":            1,
+    "severity":               "Informational"
+  },
+
+  patterns: {
+    ipv4: "\\d+\\.\\d+\\.\\d+\\.\\d+",
+    word: "\\S+",
+    rest: ".*"
+  },
+
+  formats: [
+    // Standard query log
+    {
+      id: "bind_query",
+      attributes: {
+        class_uid: 4003, class_name: "DNS Activity",
+        category_uid: 4, activity_id: 1, type_uid: 400301
+      },
+      format: ".*queries: info: client @$session_handle=word$ $src_ip=ipv4$#$src_port=word$ \\($query_name=word$\\): query: $query_name2=word$ IN $query_type=word$ .*",
+      halt: true,
+      rewrites: [
+        // AXFR zone transfer attempt → Detection Finding
+        { input: "query_type", output: "class_uid",     match: "^AXFR$", replace: "2004" },
+        { input: "query_type", output: "class_name",    match: "^AXFR$", replace: "Detection Finding" },
+        { input: "query_type", output: "category_uid",  match: "^AXFR$", replace: "2" },
+        { input: "query_type", output: "category_name", match: "^AXFR$", replace: "Findings" },
+        { input: "query_type", output: "type_uid",      match: "^AXFR$", replace: "200401" },
+        { input: "query_type", output: "finding_title", match: "^AXFR$", replace: "BIND DNS Zone Transfer Attempt" },
+        { input: "query_type", output: "finding_info.title", match: "^AXFR$", replace: "BIND DNS Zone Transfer Attempt" },
+        { input: "query_type", output: "severity_id",   match: "^AXFR$", replace: "4" },
+        { input: "query_type", output: "severity",      match: "^AXFR$", replace: "High" },
+
+        // Long base64-looking query → DNS tunneling
+        { input: "query_name", output: "class_uid",     match: "^[A-Za-z0-9+/=]{60,}.*$", replace: "2004" },
+        { input: "query_name", output: "class_name",    match: "^[A-Za-z0-9+/=]{60,}.*$", replace: "Detection Finding" },
+        { input: "query_name", output: "category_uid",  match: "^[A-Za-z0-9+/=]{60,}.*$", replace: "2" },
+        { input: "query_name", output: "category_name", match: "^[A-Za-z0-9+/=]{60,}.*$", replace: "Findings" },
+        { input: "query_name", output: "type_uid",      match: "^[A-Za-z0-9+/=]{60,}.*$", replace: "200401" },
+        { input: "query_name", output: "finding_title", match: "^[A-Za-z0-9+/=]{60,}.*$", replace: "BIND DNS Tunneling Suspected" },
+        { input: "query_name", output: "finding_info.title", match: "^[A-Za-z0-9+/=]{60,}.*$", replace: "BIND DNS Tunneling Suspected" },
+        { input: "query_name", output: "severity_id",   match: "^[A-Za-z0-9+/=]{60,}.*$", replace: "5" },
+        { input: "query_name", output: "severity",      match: "^[A-Za-z0-9+/=]{60,}.*$", replace: "Critical" },
+
+        // Known-bad TLDs (dyndns, no-ip, etc.) → Suspicious DNS
+        { input: "query_name", output: "class_uid",     match: "^.*\\.(dyndns|no-ip|hopto|dnsdynamic|webhop)\\..*$", replace: "2004" },
+        { input: "query_name", output: "class_name",    match: "^.*\\.(dyndns|no-ip|hopto|dnsdynamic|webhop)\\..*$", replace: "Detection Finding" },
+        { input: "query_name", output: "category_uid",  match: "^.*\\.(dyndns|no-ip|hopto|dnsdynamic|webhop)\\..*$", replace: "2" },
+        { input: "query_name", output: "category_name", match: "^.*\\.(dyndns|no-ip|hopto|dnsdynamic|webhop)\\..*$", replace: "Findings" },
+        { input: "query_name", output: "type_uid",      match: "^.*\\.(dyndns|no-ip|hopto|dnsdynamic|webhop)\\..*$", replace: "200401" },
+        { input: "query_name", output: "finding_title", match: "^.*\\.(dyndns|no-ip|hopto|dnsdynamic|webhop)\\..*$", replace: "BIND Suspicious Dynamic DNS Query" },
+        { input: "query_name", output: "finding_info.title", match: "^.*\\.(dyndns|no-ip|hopto|dnsdynamic|webhop)\\..*$", replace: "BIND Suspicious Dynamic DNS Query" },
+        { input: "query_name", output: "severity_id",   match: "^.*\\.(dyndns|no-ip|hopto|dnsdynamic|webhop)\\..*$", replace: "4" },
+        { input: "query_name", output: "severity",      match: "^.*\\.(dyndns|no-ip|hopto|dnsdynamic|webhop)\\..*$", replace: "High" }
+      ]
+    },
+
+    // Security warning (zone transfer denied, etc)
+    {
+      id: "bind_security",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, type_uid: 200401,
+        finding_title: "BIND Security Warning",
+        severity_id: 4, severity: "High"
+      },
+      format: ".*security: warning: $detail=rest$",
+      halt: true
+    }
+  ]
+}

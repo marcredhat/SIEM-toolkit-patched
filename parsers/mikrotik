@@ -1,0 +1,436 @@
+{
+  attributes: {
+    "metadata.version":    "2.0.0",
+    "dataSource.vendor":   "MikroTik",
+    "dataSource.name":     "MikroTik RouterOS",
+    "dataSource.category": "security",
+    "Category": "security",
+    "metadata.product.vendor_name": "MikroTik",
+    "metadata.product.name":        "RouterOS",
+    "metadata.log_provider":        "syslog",
+    "severity_id": 1,
+    "severity": "Informational"
+  },
+
+  patterns: {
+    ipv4:     "\\d+\\.\\d+\\.\\d+\\.\\d+",
+    ipv6:     "[0-9a-fA-F:]+",
+    mac:      "[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}",
+    num:      "\\d+",
+    word:     "\\w+",
+    iface:    "[\\w().-]+",
+    proto:    "[A-Z]+",
+    signal:   "-?\\d+",
+    ts:       "\\w+/\\d+/\\d+ \\d+:\\d+:\\d+|\\d+:\\d+:\\d+",
+    rest:     ".*"
+  },
+
+  formats: [
+    // ═══════════════════════════════════════════════════════════════════════════
+    // FIREWALL (Network Activity 4001)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    // input: in:ether1 out:(none), src-mac 00:21:29:6d:82:07, proto UDP, 10.1.101.1:520->10.1.101.255:520, len 452
+    {
+      id: "firewall_full",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 6, activity_name: "Traffic",
+        type_uid: 400106
+      },
+      format: "$chain=word$: in:$in_iface=iface$ out:$out_iface=iface$, src-mac $src_mac=mac$, proto $protocol=proto$, $src_ip=ipv4$:$src_port=num$->$dst_ip=ipv4$:$dst_port=num$, len $pkt_len=num$",
+      halt: true
+    },
+
+    // forward: in:ether1 out:ether2, connection-state:established, src-mac 00:11:22:33:44:55
+    {
+      id: "firewall_conntrack",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 6, activity_name: "Traffic",
+        type_uid: 400106
+      },
+      format: "$chain=word$: in:$in_iface=iface$ out:$out_iface=iface$, connection-state:$conn_state=word$, src-mac $src_mac=mac$",
+      halt: true
+    },
+
+    // Firewall DROP - appears in XDR as Detection Finding
+    // drop: in:ether1 out:(none), src-mac 00:21:29:6d:82:07, proto TCP, 10.1.101.1:12345->10.1.101.255:22, len 64
+    {
+      id: "firewall_drop",
+      attributes: {
+        class_uid: 4002, class_name: "Detection Finding",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 400201,
+        disposition_id: 2, disposition: "Blocked",
+        severity_id: 3, severity: "Medium",
+        "finding_info.title": "MikroTik Firewall Drop",
+        "finding_info.types": ["Network"],
+        confidence_id: 3, confidence: "High"
+      },
+      format: "drop: in:$in_iface=iface$ out:$out_iface=iface$, src-mac $src_mac=mac$, proto $protocol=proto$, $src_ip=ipv4$:$src_port=num$->$dst_ip=ipv4$:$dst_port=num$, len $pkt_len=num$",
+      halt: true
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DHCP (DHCP Activity 4004)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    // defconf deassigned 192.168.88.37 for B0:E4:5C:27:EF:F2 Samsung
+    {
+      id: "dhcp_deassign",
+      attributes: {
+        class_uid: 4004, class_name: "DHCP Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 2, activity_name: "Release",
+        type_uid: 400402
+      },
+      format: "$dhcp_server=word$ deassigned $client_ip=ipv4$ for $client_mac=mac$ $hostname=rest$",
+      halt: true
+    },
+
+    // defconf assigned 192.168.88.37 for B0:E4:5C:27:EF:F2 Samsung
+    {
+      id: "dhcp_assign",
+      attributes: {
+        class_uid: 4004, class_name: "DHCP Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 1, activity_name: "Lease",
+        type_uid: 400401
+      },
+      format: "$dhcp_server=word$ assigned $client_ip=ipv4$ for $client_mac=mac$ $hostname=rest$",
+      halt: true
+    },
+
+    // dhcp1 got address 192.168.1.100 from 192.168.1.1
+    {
+      id: "dhcp_client",
+      attributes: {
+        class_uid: 4004, class_name: "DHCP Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 1, activity_name: "Lease",
+        type_uid: 400401
+      },
+      format: "$dhcp_client=word$ got address $client_ip=ipv4$ from $dhcp_server_ip=ipv4$",
+      halt: true
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // AUTHENTICATION (Authentication 3002)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    // user admin logged in from 10.1.101.212 via winbox
+    {
+      id: "login",
+      attributes: {
+        class_uid: 3002, class_name: "Authentication",
+        category_uid: 3, category_name: "Identity & Access Management",
+        activity_id: 1, activity_name: "Logon",
+        type_uid: 300201,
+        status_id: 1, status: "Success"
+      },
+      format: "user $user=word$ logged in from $src_ip=ipv4$ via $method=word$",
+      halt: true
+    },
+
+    // user admin logged out from 10.1.101.212 via telnet
+    {
+      id: "logout",
+      attributes: {
+        class_uid: 3002, class_name: "Authentication",
+        category_uid: 3, category_name: "Identity & Access Management",
+        activity_id: 2, activity_name: "Logoff",
+        type_uid: 300202,
+        status_id: 1, status: "Success"
+      },
+      format: "user $user=word$ logged out from $src_ip=ipv4$ via $method=word$",
+      halt: true
+    },
+
+    // login failure for user admin from 10.1.101.50 via ssh
+    // Using Detection Finding class for XDR visibility
+    {
+      id: "login_failure",
+      attributes: {
+        class_uid: 4002, class_name: "Detection Finding",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 400201,
+        status_id: 2, status: "Failure",
+        severity_id: 3, severity: "Medium",
+        "finding_info.title": "MikroTik Login Failure",
+        "finding_info.types": ["Authentication"],
+        confidence_id: 3, confidence: "High"
+      },
+      format: "login failure for user $user=word$ from $src_ip=ipv4$ via $method=word$",
+      halt: true
+    },
+
+    // <ppp-user1> connected from 203.0.113.50
+    {
+      id: "ppp_connect",
+      attributes: {
+        class_uid: 3002, class_name: "Authentication",
+        category_uid: 3, category_name: "Identity & Access Management",
+        activity_id: 1, activity_name: "Logon",
+        type_uid: 300201,
+        status_id: 1, status: "Success",
+        auth_protocol: "PPP"
+      },
+      format: "<$user$> connected from $src_ip=ipv4$",
+      halt: true
+    },
+
+    // <ppp-user1> disconnected
+    {
+      id: "ppp_disconnect",
+      attributes: {
+        class_uid: 3002, class_name: "Authentication",
+        category_uid: 3, category_name: "Identity & Access Management",
+        activity_id: 2, activity_name: "Logoff",
+        type_uid: 300202,
+        auth_protocol: "PPP"
+      },
+      format: "<$user$> disconnected",
+      halt: true
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // CONFIGURATION (Entity Management 5004)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    // mangle rule added by admin
+    {
+      id: "config_added",
+      attributes: {
+        class_uid: 5004, class_name: "Entity Management",
+        category_uid: 5, category_name: "Discovery",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 500401
+      },
+      format: "$object=rest$ added by $user=word$",
+      halt: true
+    },
+
+    // mangle rule changed by admin
+    {
+      id: "config_changed",
+      attributes: {
+        class_uid: 5004, class_name: "Entity Management",
+        category_uid: 5, category_name: "Discovery",
+        activity_id: 3, activity_name: "Update",
+        type_uid: 500403
+      },
+      format: "$object=rest$ changed by $user=word$",
+      halt: true
+    },
+
+    // mangle rule moved by admin
+    {
+      id: "config_moved",
+      attributes: {
+        class_uid: 5004, class_name: "Entity Management",
+        category_uid: 5, category_name: "Discovery",
+        activity_id: 3, activity_name: "Update",
+        type_uid: 500403
+      },
+      format: "$object=rest$ moved by $user=word$",
+      halt: true
+    },
+
+    // item removed by admin
+    {
+      id: "config_removed",
+      attributes: {
+        class_uid: 5004, class_name: "Entity Management",
+        category_uid: 5, category_name: "Discovery",
+        activity_id: 2, activity_name: "Delete",
+        type_uid: 500402
+      },
+      format: "$object=rest$ removed by $user=word$",
+      halt: true
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // SYSTEM (Operating System Patch State 6003)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    // router rebooted
+    {
+      id: "system_reboot",
+      attributes: {
+        class_uid: 6003, class_name: "Operating System Patch State",
+        category_uid: 6, category_name: "Application Activity",
+        activity_id: 0, activity_name: "Unknown",
+        type_uid: 600300,
+        severity_id: 2, severity: "Low"
+      },
+      format: "router rebooted",
+      halt: true
+    },
+
+    // system,error,critical kernel failure
+    {
+      id: "system_critical",
+      attributes: {
+        class_uid: 6003, class_name: "Operating System Patch State",
+        category_uid: 6, category_name: "Application Activity",
+        activity_id: 0, activity_name: "Unknown",
+        type_uid: 600300,
+        severity_id: 5, severity: "Critical"
+      },
+      format: "kernel $error_msg=rest$",
+      halt: true
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // WIRELESS (Network Activity 4001)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    // connected, 00:11:22:33:44:55@wlan1, signal-strength=-65
+    {
+      id: "wireless_connect",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 1, activity_name: "Open",
+        type_uid: 400101
+      },
+      format: "connected, $client_mac=mac$@$iface=iface$, signal-strength=$signal=signal$",
+      halt: true
+    },
+
+    // disconnected, 00:11:22:33:44:55@wlan1
+    {
+      id: "wireless_disconnect",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 2, activity_name: "Close",
+        type_uid: 400102
+      },
+      format: "disconnected, $client_mac=mac$@$iface=iface$",
+      halt: true
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DNS (DNS Activity 4003)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    // dns query from 192.168.1.10: example.com A
+    {
+      id: "dns_query",
+      attributes: {
+        class_uid: 4003, class_name: "DNS Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 1, activity_name: "Query",
+        type_uid: 400301
+      },
+      format: "dns query from $src_ip=ipv4$: $query_hostname=rest$",
+      halt: true
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ROUTING (Network Activity 4001)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    // ospf neighbor 10.0.0.1 state changed to Full
+    {
+      id: "ospf_neighbor",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 5, activity_name: "Update",
+        type_uid: 400105
+      },
+      format: "ospf neighbor $neighbor_ip=ipv4$ state changed to $neighbor_state=word$",
+      halt: true
+    },
+
+    // bgp peer 10.0.0.2 established
+    {
+      id: "bgp_established",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 1, activity_name: "Open",
+        type_uid: 400101
+      },
+      format: "bgp peer $peer_ip=ipv4$ established",
+      halt: true
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // IPSEC/VPN (Tunnel Activity 4014)
+    // ═══════════════════════════════════════════════════════════════════════════
+    
+    // ipsec,info phase1 negotiation succeeded for 203.0.113.1
+    {
+      id: "ipsec_phase1",
+      attributes: {
+        class_uid: 4014, class_name: "Tunnel Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 1, activity_name: "Open",
+        type_uid: 401401
+      },
+      format: "phase1 negotiation $ipsec_result=word$ for $peer_ip=ipv4$",
+      halt: true
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // GENERIC FALLBACK
+    // ═══════════════════════════════════════════════════════════════════════════
+    {
+      id: "generic",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 0, activity_name: "Unknown",
+        type_uid: 400100
+      },
+      format: "$body=rest$"
+    }
+  ],
+
+  mappings: {
+    version: 1,
+    mappings: [
+      {
+        transformations: [
+          { rename: { from: "src_ip", to: "src_endpoint.ip" } },
+          { rename: { from: "dst_ip", to: "dst_endpoint.ip" } },
+          { rename: { from: "src_port", to: "src_endpoint.port" } },
+          { rename: { from: "dst_port", to: "dst_endpoint.port" } },
+          { rename: { from: "src_mac", to: "src_endpoint.mac" } },
+          { rename: { from: "in_iface", to: "src_endpoint.interface_name" } },
+          { rename: { from: "out_iface", to: "dst_endpoint.interface_name" } },
+          { rename: { from: "protocol", to: "connection_info.protocol_name" } },
+          { rename: { from: "pkt_len", to: "traffic.bytes" } },
+          { rename: { from: "client_ip", to: "dst_endpoint.ip" } },
+          { rename: { from: "client_mac", to: "dst_endpoint.mac" } },
+          { rename: { from: "user", to: "actor.user.name" } },
+          { rename: { from: "method", to: "auth_protocol" } },
+          { rename: { from: "iface", to: "src_endpoint.interface_name" } },
+          { rename: { from: "signal", to: "unmapped.wireless_signal" } },
+          { rename: { from: "chain", to: "unmapped.firewall_chain" } },
+          { rename: { from: "dhcp_server", to: "unmapped.dhcp_server" } },
+          { rename: { from: "dhcp_server_ip", to: "unmapped.dhcp_server_ip" } },
+          { rename: { from: "dhcp_client", to: "unmapped.dhcp_client" } },
+          { rename: { from: "hostname", to: "dst_endpoint.hostname" } },
+          { rename: { from: "object", to: "unmapped.config_object" } },
+          { rename: { from: "conn_state", to: "connection_info.state" } },
+          { rename: { from: "neighbor_ip", to: "dst_endpoint.ip" } },
+          { rename: { from: "neighbor_state", to: "unmapped.ospf_state" } },
+          { rename: { from: "peer_ip", to: "dst_endpoint.ip" } },
+          { rename: { from: "query_hostname", to: "query.hostname" } },
+          { rename: { from: "ipsec_result", to: "unmapped.ipsec_result" } },
+          { rename: { from: "error_msg", to: "unmapped.error_message" } },
+          { rename: { from: "body", to: "unmapped.raw_body" } }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,216 @@
+// SentinelOne AI SIEM Parser: WatchGuard Fireware OS
+// OCSF Schema Version: 1.1.0
+// Maps WatchGuard Firebox logs to OCSF classes
+// Primary Classes: Network Activity (4001), Authentication (3002), Security Finding (2001)
+
+{
+  "parserName": "WatchGuard-OCSF",
+  "version": "1.0.0",
+  "vendor": "WatchGuard",
+  "product": "Fireware OS",
+  "format": "space-delimited",
+  
+  "patterns": [
+    // Firewall traffic logs
+    {
+      "pattern": "^(\\d{4}-\\d{2}-\\d{2}\\s+[\\d:]+)\\s+firewall\\s+(Allow|Deny)\\s+([\\d.]+)\\s+([\\d.]+|\\S+)\\s+(\\S+)\\s+(\\d+)\\s+(\\d+)",
+      "rewrites": [
+        {"set": "class_uid", "value": "4001"},
+        {"set": "class_name", "value": "Network Activity"},
+        {"set": "category_uid", "value": "4"},
+        {"set": "category_name", "value": "Network Activity"},
+        
+        // Activity
+        {"group": 2, "to": "activity_name"},
+        {"lookup": "activity_name", "map": {"Allow": 1, "Deny": 2}, "to": "activity_id"},
+        
+        // Metadata
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "WatchGuard Fireware"},
+        {"set": "metadata.product.vendor_name", "value": "WatchGuard"},
+        
+        // Time
+        {"group": 1, "to": "time"},
+        
+        // Endpoints
+        {"group": 3, "to": "src_endpoint.ip"},
+        {"group": 4, "to": "dst_endpoint.ip"},
+        {"group": 6, "to": "src_endpoint.port"},
+        {"group": 7, "to": "dst_endpoint.port"},
+        
+        // Protocol/Service
+        {"group": 5, "to": "connection_info.protocol_name"},
+        
+        // Extract additional fields
+        {"regex": "rule_name=\"([^\"]+)\"", "group": 1, "to": "policy.name"},
+        {"regex": "geo_src=\"([^\"]+)\"", "group": 1, "to": "src_endpoint.location.country"},
+        {"regex": "geo_dst=\"([^\"]+)\"", "group": 1, "to": "dst_endpoint.location.country"},
+        {"regex": "proxy_act=\"([^\"]+)\"", "group": 1, "to": "proxy.name"},
+        {"regex": "msg_id=\"([^\"]+)\"", "group": 1, "to": "metadata.uid"},
+        
+        // Application info
+        {"regex": "app_name=\"([^\"]+)\"", "group": 1, "to": "app_name"},
+        {"regex": "app_cat=\"([^\"]+)\"", "group": 1, "to": "app.category"},
+        {"regex": "app_behavior=\"([^\"]+)\"", "group": 1, "to": "app.feature.name"},
+        
+        // Status
+        {"lookup": "activity_name", "map": {"Allow": 1, "Deny": 2}, "to": "status_id"},
+        {"lookup": "activity_name", "map": {"Allow": "Success", "Deny": "Failure"}, "to": "status"}
+      ]
+    },
+    
+    // IPS signature match
+    {
+      "pattern": "IPS\\s+signature_match",
+      "rewrites": [
+        {"set": "class_uid", "value": "2004"},
+        {"set": "class_name", "value": "Detection Finding"},
+        {"set": "category_uid", "value": "2"},
+        {"set": "category_name", "value": "Findings"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "WatchGuard IPS"},
+        {"set": "metadata.product.vendor_name", "value": "WatchGuard"},
+        
+        // Endpoints
+        {"regex": "signature_match\\s+([\\d.]+)\\s+([\\d.]+)", "group": 1, "to": "src_endpoint.ip"},
+        {"regex": "signature_match\\s+([\\d.]+)\\s+([\\d.]+)", "group": 2, "to": "dst_endpoint.ip"},
+        
+        // Signature info
+        {"regex": "sig_name=\"([^\"]+)\"", "group": 1, "to": "finding_info.title"},
+        {"regex": "sig_id=\"([^\"]+)\"", "group": 1, "to": "finding_info.uid"},
+        {"regex": "sig_vers=\"([^\"]+)\"", "group": 1, "to": "finding_info.version"},
+        {"regex": "severity=\"([^\"]+)\"", "group": 1, "to": "severity"},
+        {"regex": "action=\"([^\"]+)\"", "group": 1, "to": "activity_name"},
+        
+        // Severity mapping
+        {"lookup": "severity", "map": {"Critical": 5, "High": 4, "Medium": 3, "Low": 2, "Info": 1}, "to": "severity_id"},
+        
+        // Action mapping
+        {"lookup": "activity_name", "map": {"block": 2, "drop": 2, "alert": 1, "allow": 0}, "to": "activity_id"},
+        
+        // Geo
+        {"regex": "geo_src=\"([^\"]+)\"", "group": 1, "to": "src_endpoint.location.country"}
+      ]
+    },
+    
+    // Antivirus detection
+    {
+      "pattern": "antivirus\\s+virus_found",
+      "rewrites": [
+        {"set": "class_uid", "value": "2001"},
+        {"set": "class_name", "value": "Security Finding"},
+        {"set": "finding_info.types", "value": ["Malware"]},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "WatchGuard Gateway AntiVirus"},
+        {"set": "metadata.product.vendor_name", "value": "WatchGuard"},
+        
+        // Endpoints
+        {"regex": "virus_found\\s+([\\d.]+)", "group": 1, "to": "src_endpoint.ip"},
+        
+        // Malware info
+        {"regex": "virus_name=\"([^\"]+)\"", "group": 1, "to": "malware.name"},
+        {"regex": "file_name=\"([^\"]+)\"", "group": 1, "to": "file.name"},
+        {"regex": "action=\"([^\"]+)\"", "group": 1, "to": "activity_name"},
+        {"regex": "content_type=\"([^\"]+)\"", "group": 1, "to": "file.type_id"},
+        {"regex": "md5=\"([^\"]+)\"", "group": 1, "to": "file.hashes.md5"},
+        
+        {"set": "severity_id", "value": "5"},
+        {"set": "severity", "value": "Critical"}
+      ]
+    },
+    
+    // Authentication events
+    {
+      "pattern": "authentication\\s+(auth_success|auth_failure)",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        {"set": "category_uid", "value": "3"},
+        {"set": "category_name", "value": "Identity & Access Management"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Logon"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "WatchGuard Fireware"},
+        {"set": "metadata.product.vendor_name", "value": "WatchGuard"},
+        
+        // User
+        {"regex": "user=\"([^\"]+)\"", "group": 1, "to": "user.name"},
+        {"regex": "domain=\"([^\"]+)\"", "group": 1, "to": "user.domain"},
+        
+        // Source
+        {"regex": "auth_\\w+\\s+([\\d.]+)", "group": 1, "to": "src_endpoint.ip"},
+        
+        // Auth details
+        {"regex": "auth_method=\"([^\"]+)\"", "group": 1, "to": "auth_protocol"},
+        {"regex": "auth_server=\"([^\"]+)\"", "group": 1, "to": "auth_server"},
+        {"regex": "session_id=\"([^\"]+)\"", "group": 1, "to": "session.uid"},
+        {"regex": "reason=\"([^\"]+)\"", "group": 1, "to": "status_detail"},
+        {"regex": "attempts=\"([^\"]+)\"", "group": 1, "to": "attempts"},
+        
+        // Status
+        {"set": "status_id", "value": "1", "if": "auth_success"},
+        {"set": "status", "value": "Success", "if": "auth_success"},
+        {"set": "status_id", "value": "2", "if": "auth_failure"},
+        {"set": "status", "value": "Failure", "if": "auth_failure"}
+      ]
+    },
+    
+    // System/Config changes
+    {
+      "pattern": "system\\s+config_change",
+      "rewrites": [
+        {"set": "class_uid", "value": "5001"},
+        {"set": "class_name", "value": "Configuration"},
+        {"set": "category_uid", "value": "5"},
+        {"set": "category_name", "value": "Discovery"},
+        {"set": "activity_id", "value": "2"},
+        {"set": "activity_name", "value": "Update"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "WatchGuard Fireware"},
+        {"set": "metadata.product.vendor_name", "value": "WatchGuard"},
+        
+        // Actor
+        {"regex": "admin_user=\"([^\"]+)\"", "group": 1, "to": "actor.user.name"},
+        {"regex": "config_change\\s+([\\d.]+)", "group": 1, "to": "src_endpoint.ip"},
+        
+        // Change details
+        {"regex": "change_type=\"([^\"]+)\"", "group": 1, "to": "activity_name"},
+        {"regex": "object_type=\"([^\"]+)\"", "group": 1, "to": "resources.type"},
+        {"regex": "object_name=\"([^\"]+)\"", "group": 1, "to": "resources.name"},
+        {"regex": "action=\"([^\"]+)\"", "group": 1, "to": "resources.action"}
+      ]
+    },
+    
+    // DLP events
+    {
+      "pattern": "dlp\\s+data_leak_prevented",
+      "rewrites": [
+        {"set": "class_uid", "value": "2001"},
+        {"set": "class_name", "value": "Security Finding"},
+        {"set": "finding_info.types", "value": ["Data Loss Prevention"]},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "WatchGuard DLP"},
+        {"set": "metadata.product.vendor_name", "value": "WatchGuard"},
+        
+        // Source
+        {"regex": "data_leak_prevented\\s+([\\d.]+)", "group": 1, "to": "src_endpoint.ip"},
+        
+        // DLP details
+        {"regex": "rule_name=\"([^\"]+)\"", "group": 1, "to": "policy.name"},
+        {"regex": "pattern_matched=\"([^\"]+)\"", "group": 1, "to": "finding_info.title"},
+        {"regex": "action=\"([^\"]+)\"", "group": 1, "to": "activity_name"},
+        {"regex": "user=\"([^\"]+)\"", "group": 1, "to": "actor.user.name"},
+        {"regex": "file_name=\"([^\"]+)\"", "group": 1, "to": "file.name"},
+        {"regex": "bytes_blocked=\"([^\"]+)\"", "group": 1, "to": "traffic.bytes"},
+        
+        {"set": "severity_id", "value": "4"},
+        {"set": "severity", "value": "High"}
+      ]
+    }
+  ]
+}

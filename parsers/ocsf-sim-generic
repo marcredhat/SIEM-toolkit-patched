@@ -1,0 +1,184 @@
+// SentinelOne AI SIEM Parser: SIM Generic Log DSM
+// OCSF Schema Version: 1.1.0
+// Maps generic syslog-style logs to OCSF classes
+// Primary Classes: Base Event (0), Application Activity (6001)
+
+{
+  "parserName": "SIMGeneric-OCSF",
+  "version": "1.0.0",
+  "vendor": "Generic",
+  "product": "SIM Generic Log",
+  "format": "syslog",
+  
+  "patterns": [
+    // Generic syslog with key=value pairs
+    {
+      "pattern": "^(\\w+\\s+\\d+\\s+[\\d:]+)\\s+(\\S+)\\s+(\\S+)\\[(\\d+)\\]:\\s+(\\w+)\\s+(.*)$",
+      "rewrites": [
+        {"set": "class_uid", "value": "6001"},
+        {"set": "class_name", "value": "Application Activity"},
+        {"set": "category_uid", "value": "6"},
+        {"set": "category_name", "value": "Application Activity"},
+        
+        // Metadata
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Generic Application"},
+        {"set": "metadata.product.vendor_name", "value": "Unknown"},
+        {"group": 2, "to": "device.hostname"},
+        {"group": 3, "to": "app_name"},
+        {"group": 4, "to": "actor.process.pid"},
+        
+        // Time
+        {"group": 1, "to": "time", "transform": "syslogTimestamp"},
+        
+        // Severity from log level
+        {"group": 5, "to": "severity"},
+        {"lookup": "severity", "map": {
+          "CRITICAL": 5, "FATAL": 6, "ERROR": 4, "WARNING": 3, "WARN": 3,
+          "INFO": 1, "DEBUG": 0, "TRACE": 0
+        }, "to": "severity_id"},
+        
+        // Message
+        {"group": 6, "to": "message"},
+        
+        // Extract key=value pairs from message
+        {"kvExtract": "$6", "to": "unmapped"}
+      ]
+    },
+    
+    // Authentication events
+    {
+      "pattern": "(login|logon|auth|authentication)",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        
+        // Extract user
+        {"regex": "user[=:]\\s*(\\S+)", "group": 1, "to": "user.name"},
+        
+        // Extract source IP
+        {"regex": "(?:src_ip|ip|from)[=:]\\s*([\\d.]+)", "group": 1, "to": "src_endpoint.ip"},
+        
+        // Extract session
+        {"regex": "session[_id]*[=:]\\s*(\\S+)", "group": 1, "to": "session.uid"},
+        
+        // Determine success/failure
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Logon"},
+        {"set": "status_id", "value": "1", "if": "success|successful|accepted"},
+        {"set": "status", "value": "Success", "if": "success|successful|accepted"},
+        {"set": "status_id", "value": "2", "if": "fail|failed|denied|invalid"},
+        {"set": "status", "value": "Failure", "if": "fail|failed|denied|invalid"}
+      ]
+    },
+    
+    // File operations
+    {
+      "pattern": "(file|upload|download)",
+      "rewrites": [
+        {"set": "class_uid", "value": "1001"},
+        {"set": "class_name", "value": "File Activity"},
+        
+        // Extract filename
+        {"regex": "filename[=:]\\s*(\\S+)", "group": 1, "to": "file.name"},
+        
+        // Extract size
+        {"regex": "size[_bytes]*[=:]\\s*(\\d+)", "group": 1, "to": "file.size"},
+        
+        // Extract user
+        {"regex": "user[=:]\\s*(\\S+)", "group": 1, "to": "actor.user.name"},
+        
+        // Extract destination
+        {"regex": "destination[=:]\\s*(\\S+)", "group": 1, "to": "file.path"},
+        
+        // Activity
+        {"set": "activity_id", "value": "2", "if": "upload"},
+        {"set": "activity_name", "value": "Upload", "if": "upload"},
+        {"set": "activity_id", "value": "3", "if": "download"},
+        {"set": "activity_name", "value": "Download", "if": "download"}
+      ]
+    },
+    
+    // Security alerts
+    {
+      "pattern": "(security|alert|attack|injection|malware|threat)",
+      "rewrites": [
+        {"set": "class_uid", "value": "2001"},
+        {"set": "class_name", "value": "Security Finding"},
+        {"set": "category_uid", "value": "2"},
+        {"set": "category_name", "value": "Findings"},
+        
+        // Extract source IP
+        {"regex": "(?:src_ip|ip)[=:]\\s*([\\d.]+)", "group": 1, "to": "src_endpoint.ip"},
+        
+        // Extract target
+        {"regex": "(?:target_url|url)[=:]\\s*(\\S+)", "group": 1, "to": "finding_info.src_url"},
+        
+        // Extract payload
+        {"regex": "payload[=:]\\s*\"([^\"]+)\"", "group": 1, "to": "finding_info.data_sources"},
+        
+        // Severity
+        {"set": "severity_id", "value": "4"},
+        {"set": "severity", "value": "High"}
+      ]
+    },
+    
+    // Configuration changes
+    {
+      "pattern": "(config|configuration|setting|changed)",
+      "rewrites": [
+        {"set": "class_uid", "value": "5001"},
+        {"set": "class_name", "value": "Configuration"},
+        {"set": "activity_id", "value": "2"},
+        {"set": "activity_name", "value": "Update"},
+        
+        // Extract setting
+        {"regex": "setting[=:]\\s*(\\S+)", "group": 1, "to": "config.name"},
+        
+        // Extract old/new values
+        {"regex": "old_value[=:]\\s*(\\S+)", "group": 1, "to": "prev_config.value"},
+        {"regex": "new_value[=:]\\s*(\\S+)", "group": 1, "to": "config.value"},
+        
+        // Extract who changed
+        {"regex": "changed_by[=:]\\s*(\\S+)", "group": 1, "to": "actor.user.name"}
+      ]
+    },
+    
+    // Service events
+    {
+      "pattern": "(service|started|stopped|restart)",
+      "rewrites": [
+        {"set": "class_uid", "value": "1006"},
+        {"set": "class_name", "value": "Service Activity"},
+        
+        // Extract service name
+        {"regex": "service_name[=:]\\s*(\\S+)", "group": 1, "to": "service.name"},
+        
+        // Extract version
+        {"regex": "version[=:]\\s*(\\S+)", "group": 1, "to": "service.version"},
+        
+        // Extract port
+        {"regex": "port[=:]\\s*(\\d+)", "group": 1, "to": "service.port"},
+        
+        // Extract PID
+        {"regex": "pid[=:]\\s*(\\d+)", "group": 1, "to": "service.pid"},
+        
+        // Activity
+        {"set": "activity_id", "value": "1", "if": "started"},
+        {"set": "activity_name", "value": "Start", "if": "started"},
+        {"set": "activity_id", "value": "2", "if": "stopped"},
+        {"set": "activity_name", "value": "Stop", "if": "stopped"}
+      ]
+    }
+  ],
+  
+  "transforms": {
+    "syslogTimestamp": {
+      "formats": [
+        "MMM dd HH:mm:ss",
+        "MMM  d HH:mm:ss"
+      ],
+      "timezone": "local"
+    }
+  }
+}

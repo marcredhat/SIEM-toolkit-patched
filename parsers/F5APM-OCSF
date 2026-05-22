@@ -1,0 +1,84 @@
+{
+  // F5 BIG-IP APM (VPN/Access) parser — OCSF v1.3.0
+  attributes: {
+    "metadata.version":             "1.3.0",
+    "metadata.product.vendor_name": "F5",
+    "metadata.product.name":        "BIG-IP APM",
+    "metadata.log_provider":        "syslog",
+    "Category":               "iam",
+    "dataSource.vendor":      "F5",
+    "dataSource.name":        "BIG-IP APM",
+    "dataSource.category":    "vpn",
+    "category_uid":           3,
+    "category_name":          "IAM",
+    "class_uid":              3005,
+    "class_name":             "User Access Management",
+    "activity_id":            1,
+    "type_uid":               300501,
+    "status_id":              1,
+    "severity_id":            1
+  },
+
+  patterns: {
+    ipv4: "\\d+\\.\\d+\\.\\d+\\.\\d+",
+    word: "\\S+",
+    untilC: "[^\\n]*?",
+    rest: ".*"
+  },
+
+  formats: [
+    // Session authentication failed → Detection Finding (HIGH)
+    {
+      id: "apm_auth_fail",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, category_name: "Findings",
+        type_uid: 200401,
+        finding_title: "F5 APM Authentication Failure",
+        severity_id: 4, severity: "High",
+        disposition_id: 2, disposition: "Blocked",
+        status_id: 2, status: "Failure"
+      },
+      format: ".*Session authentication failed - User: $user_name=word$ Client IP: $src_ip=ipv4$.*",
+      halt: true
+    },
+
+    // Access policy denied → Detection Finding
+    {
+      id: "apm_access_deny",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, category_name: "Findings",
+        type_uid: 200401,
+        finding_title: "F5 APM Access Policy Deny",
+        severity_id: 4, severity: "High",
+        disposition_id: 2, disposition: "Blocked"
+      },
+      format: ".*Access policy result: Deny.*$reason=rest$",
+      halt: true
+    },
+
+    // New session created
+    {
+      id: "apm_new_session",
+      attributes: {
+        class_uid: 3005, class_name: "User Access Management",
+        type_uid: 300501
+      },
+      format: ".*New session created - Client IP: $src_ip=ipv4$.*",
+      halt: true
+    },
+
+    // Successful AD auth
+    {
+      id: "apm_ad_success",
+      attributes: {
+        class_uid: 3002, class_name: "Authentication",
+        activity_id: 1, type_uid: 300201,
+        status_id: 1, status: "Success"
+      },
+      format: ".*AD Auth query - User: $user_name=word$ Domain: $domain=word$.*Result: Success.*",
+      halt: true
+    }
+  ]
+}

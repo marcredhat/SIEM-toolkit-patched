@@ -1,0 +1,312 @@
+// SentinelOne AI SIEM Parser: F5 Networks BIG-IP APM
+// OCSF Schema Version: 1.1.0
+// Maps F5 BIG-IP APM access policy logs to OCSF classes
+// Primary Classes: Authentication (3002), Session Activity (3005)
+
+{
+  "parserName": "F5APM-OCSF",
+  "version": "1.0.0",
+  "vendor": "F5 Networks",
+  "product": "BIG-IP APM",
+  "format": "syslog",
+  
+  "patterns": [
+    // Session created
+    {
+      "pattern": "apmd\\[\\d+\\]:\\s+(\\d+):(\\d+):\\s+(/\\S+):Common:(\\S+):\\s+(?:New\\s+)?[Ss]ession\\s+created",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        {"set": "category_uid", "value": "3"},
+        {"set": "category_name", "value": "Identity & Access Management"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Logon"},
+        {"set": "type_uid", "value": "300201"},
+        
+        // Metadata
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "F5 BIG-IP APM"},
+        {"set": "metadata.product.vendor_name", "value": "F5 Networks"},
+        {"group": 1, "to": "metadata.log_level"},
+        {"group": 2, "to": "metadata.facility"},
+        
+        // Policy and session
+        {"group": 3, "to": "policy.name"},
+        {"group": 4, "to": "session.uid"},
+        
+        // Extract client IP
+        {"regex": "Client IP:\\s+([\\d.]+)", "group": 1, "to": "src_endpoint.ip"},
+        
+        // Extract user agent
+        {"regex": "User Agent:\\s+(.+?)(?:\\s+$|\\s+\\w+:)", "group": 1, "to": "http_request.user_agent"},
+        
+        // Status
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    },
+    
+    // Session variable set (username)
+    {
+      "pattern": "apmd\\[\\d+\\]:\\s+\\d+:\\d+:\\s+(/\\S+):Common:(\\S+):\\s+Session variable\\s+'session\\.logon\\.last\\.username'\\s+set to\\s+'([^']+)'",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        {"set": "activity_id", "value": "0"},
+        {"set": "activity_name", "value": "Session Update"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "F5 BIG-IP APM"},
+        {"set": "metadata.product.vendor_name", "value": "F5 Networks"},
+        
+        {"group": 1, "to": "policy.name"},
+        {"group": 2, "to": "session.uid"},
+        {"group": 3, "to": "user.name"}
+      ]
+    },
+    
+    // AD Authentication
+    {
+      "pattern": "apmd\\[\\d+\\]:\\s+\\d+:\\d+:\\s+(/\\S+):Common:(\\S+):\\s+AD Auth query\\s+-\\s+User:\\s+(\\S+)\\s+Domain:\\s+(\\S+)\\s+Server:\\s+(\\S+)\\s+Result:\\s+(\\w+)",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        {"set": "category_uid", "value": "3"},
+        {"set": "category_name", "value": "Identity & Access Management"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Logon"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "F5 BIG-IP APM"},
+        {"set": "metadata.product.vendor_name", "value": "F5 Networks"},
+        
+        {"group": 1, "to": "policy.name"},
+        {"group": 2, "to": "session.uid"},
+        {"group": 3, "to": "user.name"},
+        {"group": 4, "to": "user.domain"},
+        {"group": 5, "to": "auth_server"},
+        {"group": 6, "to": "auth_result"},
+        
+        {"set": "auth_protocol", "value": "Active Directory"},
+        
+        // Status
+        {"lookup": "auth_result", "map": {"Success": 1, "Failure": 2, "Failed": 2}, "to": "status_id"},
+        {"lookup": "auth_result", "map": {"Success": "Success", "Failure": "Failure", "Failed": "Failure"}, "to": "status"}
+      ]
+    },
+    
+    // AD Group query
+    {
+      "pattern": "apmd\\[\\d+\\]:\\s+\\d+:\\d+:\\s+(/\\S+):Common:(\\S+):\\s+AD Group query\\s+-\\s+User:\\s+(\\S+)\\s+Groups:\\s+(.+?)$",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        {"set": "activity_id", "value": "0"},
+        {"set": "activity_name", "value": "Group Query"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "F5 BIG-IP APM"},
+        {"set": "metadata.product.vendor_name", "value": "F5 Networks"},
+        
+        {"group": 1, "to": "policy.name"},
+        {"group": 2, "to": "session.uid"},
+        {"group": 3, "to": "user.name"},
+        {"group": 4, "to": "user.groups", "transform": "splitComma"}
+      ]
+    },
+    
+    // MFA Challenge
+    {
+      "pattern": "apmd\\[\\d+\\]:\\s+\\d+:\\d+:\\s+(/\\S+):Common:(\\S+):\\s+MFA\\s+(Challenge sent|Response received)\\s+-\\s+(?:Method:\\s+(\\S+))?\\s*(?:Server:\\s+(\\S+))?\\s*(?:Result:\\s+(\\w+))?",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        {"set": "activity_id", "value": "99"},
+        {"set": "activity_name", "value": "MFA"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "F5 BIG-IP APM"},
+        {"set": "metadata.product.vendor_name", "value": "F5 Networks"},
+        
+        {"group": 1, "to": "policy.name"},
+        {"group": 2, "to": "session.uid"},
+        {"group": 3, "to": "mfa.status"},
+        {"group": 4, "to": "mfa.method"},
+        {"group": 5, "to": "mfa.server"},
+        {"group": 6, "to": "mfa.result"},
+        
+        // Status
+        {"lookup": "mfa.result", "map": {"Success": 1, "Failure": 2}, "to": "status_id"},
+        {"lookup": "mfa.result", "map": {"Success": "Success", "Failure": "Failure"}, "to": "status"}
+      ]
+    },
+    
+    // Access policy result
+    {
+      "pattern": "apmd\\[\\d+\\]:\\s+\\d+:\\d+:\\s+(/\\S+):Common:(\\S+):\\s+Access policy result:\\s+(\\w+)(?:\\s+-\\s+(.+))?",
+      "rewrites": [
+        {"set": "class_uid", "value": "3003"},
+        {"set": "class_name", "value": "Authorization"},
+        {"set": "category_uid", "value": "3"},
+        {"set": "category_name", "value": "Identity & Access Management"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "F5 BIG-IP APM"},
+        {"set": "metadata.product.vendor_name", "value": "F5 Networks"},
+        
+        {"group": 1, "to": "policy.name"},
+        {"group": 2, "to": "session.uid"},
+        {"group": 3, "to": "policy.result"},
+        {"group": 4, "to": "policy.detail"},
+        
+        // Activity
+        {"lookup": "policy.result", "map": {"Allow": 1, "Deny": 2}, "to": "activity_id"},
+        {"lookup": "policy.result", "map": {"Allow": "Grant", "Deny": "Deny"}, "to": "activity_name"},
+        
+        // Status
+        {"lookup": "policy.result", "map": {"Allow": 1, "Deny": 2}, "to": "status_id"},
+        {"lookup": "policy.result", "map": {"Allow": "Success", "Deny": "Failure"}, "to": "status"},
+        
+        // Extract assigned resources
+        {"regex": "Assigned resources:\\s+(.+?)$", "group": 1, "to": "resources.names"}
+      ]
+    },
+    
+    // Network Access tunnel
+    {
+      "pattern": "apmd\\[\\d+\\]:\\s+\\d+:\\d+:\\s+(/\\S+):Common:(\\S+):\\s+Network Access tunnel established\\s+-\\s+Assigned IP:\\s+([\\d.]+)\\s+Lease Pool:\\s+(\\S+)",
+      "rewrites": [
+        {"set": "class_uid", "value": "4001"},
+        {"set": "class_name", "value": "Network Activity"},
+        {"set": "category_uid", "value": "4"},
+        {"set": "category_name", "value": "Network Activity"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "VPN Connect"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "F5 BIG-IP APM"},
+        {"set": "metadata.product.vendor_name", "value": "F5 Networks"},
+        
+        {"group": 1, "to": "policy.name"},
+        {"group": 2, "to": "session.uid"},
+        {"group": 3, "to": "src_endpoint.ip"},
+        {"group": 4, "to": "connection_info.pool"},
+        
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    },
+    
+    // Session authentication failed
+    {
+      "pattern": "apmd\\[\\d+\\]:\\s+\\d+:\\d+:\\s+(/\\S+):Common:(\\S+):\\s+Session authentication failed\\s+-\\s+User:\\s+(\\S+)\\s+Client IP:\\s+([\\d.]+)\\s+Reason:\\s+(.+?)$",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Logon"},
+        {"set": "status_id", "value": "2"},
+        {"set": "status", "value": "Failure"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "F5 BIG-IP APM"},
+        {"set": "metadata.product.vendor_name", "value": "F5 Networks"},
+        
+        {"group": 1, "to": "policy.name"},
+        {"group": 2, "to": "session.uid"},
+        {"group": 3, "to": "user.name"},
+        {"group": 4, "to": "src_endpoint.ip"},
+        {"group": 5, "to": "status_detail"},
+        
+        {"set": "severity_id", "value": "3"},
+        {"set": "severity", "value": "Medium"}
+      ]
+    },
+    
+    // Session terminated
+    {
+      "pattern": "apmd\\[\\d+\\]:\\s+\\d+:\\d+:\\s+(/\\S+):Common:(\\S+):\\s+Session terminated\\s+-\\s+User:\\s+(\\S+)\\s+Reason:\\s+(\\S+)\\s+Duration:\\s+(\\d+)\\s+seconds\\s+Bytes In:\\s+(\\d+)\\s+Bytes Out:\\s+(\\d+)",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        {"set": "activity_id", "value": "2"},
+        {"set": "activity_name", "value": "Logoff"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "F5 BIG-IP APM"},
+        {"set": "metadata.product.vendor_name", "value": "F5 Networks"},
+        
+        {"group": 1, "to": "policy.name"},
+        {"group": 2, "to": "session.uid"},
+        {"group": 3, "to": "user.name"},
+        {"group": 4, "to": "logoff_type"},
+        {"group": 5, "to": "session.duration"},
+        {"group": 6, "to": "traffic.bytes_in"},
+        {"group": 7, "to": "traffic.bytes_out"},
+        
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    },
+    
+    // Anomaly detected
+    {
+      "pattern": "apmd\\[\\d+\\]:\\s+\\d+:\\d+:\\s+(/\\S+):Common:(\\S+):\\s+Anomaly detected\\s+-\\s+User:\\s+(\\S+)\\s+Client IP:\\s+([\\d.]+)\\s+Risk:\\s+(.+?)$",
+      "rewrites": [
+        {"set": "class_uid", "value": "2001"},
+        {"set": "class_name", "value": "Security Finding"},
+        {"set": "category_uid", "value": "2"},
+        {"set": "category_name", "value": "Findings"},
+        {"set": "finding_info.types", "value": ["User Behavior Anomaly"]},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "F5 BIG-IP APM"},
+        {"set": "metadata.product.vendor_name", "value": "F5 Networks"},
+        
+        {"group": 1, "to": "policy.name"},
+        {"group": 2, "to": "session.uid"},
+        {"group": 3, "to": "user.name"},
+        {"group": 4, "to": "src_endpoint.ip"},
+        {"group": 5, "to": "finding_info.title"},
+        
+        {"set": "severity_id", "value": "4"},
+        {"set": "severity", "value": "High"}
+      ]
+    },
+    
+    // Endpoint inspection
+    {
+      "pattern": "apmd\\[\\d+\\]:\\s+\\d+:\\d+:\\s+(/\\S+):Common:(\\S+):\\s+Endpoint inspection\\s+-\\s+OS:\\s+(\\S+)\\s+Antivirus:\\s+([^)]+\\))\\s+Firewall:\\s+(\\w+)\\s+Compliant:\\s+(\\w+)",
+      "rewrites": [
+        {"set": "class_uid", "value": "5002"},
+        {"set": "class_name", "value": "Compliance"},
+        {"set": "category_uid", "value": "5"},
+        {"set": "category_name", "value": "Discovery"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Endpoint Check"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "F5 BIG-IP APM"},
+        {"set": "metadata.product.vendor_name", "value": "F5 Networks"},
+        
+        {"group": 1, "to": "policy.name"},
+        {"group": 2, "to": "session.uid"},
+        {"group": 3, "to": "device.os.name"},
+        {"group": 4, "to": "device.antivirus"},
+        {"group": 5, "to": "device.firewall_status"},
+        {"group": 6, "to": "compliance.status"},
+        
+        // Status
+        {"lookup": "compliance.status", "map": {"Yes": 1, "No": 2}, "to": "status_id"},
+        {"lookup": "compliance.status", "map": {"Yes": "Compliant", "No": "Non-Compliant"}, "to": "status"}
+      ]
+    }
+  ],
+  
+  "transforms": {
+    "splitComma": {
+      "delimiter": ", ",
+      "type": "array"
+    }
+  }
+}

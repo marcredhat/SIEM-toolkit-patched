@@ -1,0 +1,219 @@
+// SentinelOne AI SIEM Parser: Microsoft Windows Security Event Log
+// OCSF Schema Version: 1.1.0
+// Maps Windows Security XML events to OCSF classes
+// Primary Classes: Authentication (3002), Account Change (3001), Process Activity (1007)
+
+{
+  "parserName": "WindowsSecurity-OCSF",
+  "version": "1.0.0",
+  "vendor": "Microsoft",
+  "product": "Windows Security",
+  "format": "xml",
+  
+  "patterns": [
+    // Successful Logon (4624)
+    {
+      "pattern": "<EventID>4624</EventID>",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        {"set": "category_uid", "value": "3"},
+        {"set": "category_name", "value": "Identity & Access Management"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Logon"},
+        {"set": "type_uid", "value": "300201"},
+        
+        // Metadata
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Windows Security"},
+        {"set": "metadata.product.vendor_name", "value": "Microsoft"},
+        {"xpath": "//System/EventRecordID", "to": "metadata.uid"},
+        {"xpath": "//System/Computer", "to": "metadata.product.feature.name"},
+        
+        // Time
+        {"xpath": "//System/TimeCreated/@SystemTime", "to": "time"},
+        
+        // User (Target)
+        {"xpath": "//EventData/Data[@Name='TargetUserName']", "to": "user.name"},
+        {"xpath": "//EventData/Data[@Name='TargetDomainName']", "to": "user.domain"},
+        {"xpath": "//EventData/Data[@Name='TargetUserSid']", "to": "user.uid"},
+        {"xpath": "//EventData/Data[@Name='TargetLogonId']", "to": "session.uid"},
+        
+        // Actor (Subject)
+        {"xpath": "//EventData/Data[@Name='SubjectUserName']", "to": "actor.user.name"},
+        {"xpath": "//EventData/Data[@Name='SubjectDomainName']", "to": "actor.user.domain"},
+        {"xpath": "//EventData/Data[@Name='SubjectUserSid']", "to": "actor.user.uid"},
+        
+        // Logon type mapping
+        {"xpath": "//EventData/Data[@Name='LogonType']", "to": "logon_type_id"},
+        {"lookup": "logon_type_id", "map": {
+          "2": "Interactive",
+          "3": "Network",
+          "4": "Batch",
+          "5": "Service",
+          "7": "Unlock",
+          "8": "NetworkCleartext",
+          "9": "NewCredentials",
+          "10": "RemoteInteractive",
+          "11": "CachedInteractive"
+        }, "to": "logon_type"},
+        
+        // Source endpoint
+        {"xpath": "//EventData/Data[@Name='IpAddress']", "to": "src_endpoint.ip"},
+        {"xpath": "//EventData/Data[@Name='IpPort']", "to": "src_endpoint.port"},
+        {"xpath": "//EventData/Data[@Name='WorkstationName']", "to": "src_endpoint.name"},
+        
+        // Authentication details
+        {"xpath": "//EventData/Data[@Name='AuthenticationPackageName']", "to": "auth_protocol"},
+        {"xpath": "//EventData/Data[@Name='LogonProcessName']", "to": "logon_process.name"},
+        
+        // Process
+        {"xpath": "//EventData/Data[@Name='ProcessId']", "to": "actor.process.pid"},
+        {"xpath": "//EventData/Data[@Name='ProcessName']", "to": "actor.process.file.path"},
+        
+        // Status
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    },
+    
+    // Failed Logon (4625)
+    {
+      "pattern": "<EventID>4625</EventID>",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Logon"},
+        {"set": "status_id", "value": "2"},
+        {"set": "status", "value": "Failure"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Windows Security"},
+        {"set": "metadata.product.vendor_name", "value": "Microsoft"},
+        
+        {"xpath": "//EventData/Data[@Name='TargetUserName']", "to": "user.name"},
+        {"xpath": "//EventData/Data[@Name='TargetDomainName']", "to": "user.domain"},
+        {"xpath": "//EventData/Data[@Name='Status']", "to": "status_code"},
+        {"xpath": "//EventData/Data[@Name='SubStatus']", "to": "status_detail"},
+        {"xpath": "//EventData/Data[@Name='FailureReason']", "to": "message"},
+        {"xpath": "//EventData/Data[@Name='IpAddress']", "to": "src_endpoint.ip"},
+        {"xpath": "//EventData/Data[@Name='WorkstationName']", "to": "src_endpoint.name"},
+        {"xpath": "//EventData/Data[@Name='LogonType']", "to": "logon_type_id"},
+        
+        // Severity for failed auth
+        {"set": "severity_id", "value": "3"},
+        {"set": "severity", "value": "Medium"}
+      ]
+    },
+    
+    // Process Creation (4688)
+    {
+      "pattern": "<EventID>4688</EventID>",
+      "rewrites": [
+        {"set": "class_uid", "value": "1007"},
+        {"set": "class_name", "value": "Process Activity"},
+        {"set": "category_uid", "value": "1"},
+        {"set": "category_name", "value": "System Activity"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Launch"},
+        {"set": "type_uid", "value": "100701"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Windows Security"},
+        {"set": "metadata.product.vendor_name", "value": "Microsoft"},
+        
+        // Actor
+        {"xpath": "//EventData/Data[@Name='SubjectUserName']", "to": "actor.user.name"},
+        {"xpath": "//EventData/Data[@Name='SubjectDomainName']", "to": "actor.user.domain"},
+        {"xpath": "//EventData/Data[@Name='SubjectUserSid']", "to": "actor.user.uid"},
+        {"xpath": "//EventData/Data[@Name='SubjectLogonId']", "to": "actor.session.uid"},
+        
+        // New Process
+        {"xpath": "//EventData/Data[@Name='NewProcessId']", "to": "process.pid"},
+        {"xpath": "//EventData/Data[@Name='NewProcessName']", "to": "process.file.path"},
+        {"xpath": "//EventData/Data[@Name='CommandLine']", "to": "process.cmd_line"},
+        {"xpath": "//EventData/Data[@Name='TokenElevationType']", "to": "process.integrity"},
+        
+        // Parent Process
+        {"xpath": "//EventData/Data[@Name='ProcessId']", "to": "process.parent_process.pid"},
+        {"xpath": "//EventData/Data[@Name='ParentProcessName']", "to": "process.parent_process.file.path"},
+        
+        // Labels
+        {"xpath": "//EventData/Data[@Name='MandatoryLabel']", "to": "process.integrity_id"}
+      ]
+    },
+    
+    // Special Privileges (4672)
+    {
+      "pattern": "<EventID>4672</EventID>",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        {"set": "activity_id", "value": "2"},
+        {"set": "activity_name", "value": "Logon: Privileged"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Windows Security"},
+        
+        {"xpath": "//EventData/Data[@Name='SubjectUserName']", "to": "user.name"},
+        {"xpath": "//EventData/Data[@Name='SubjectDomainName']", "to": "user.domain"},
+        {"xpath": "//EventData/Data[@Name='SubjectUserSid']", "to": "user.uid"},
+        {"xpath": "//EventData/Data[@Name='SubjectLogonId']", "to": "session.uid"},
+        {"xpath": "//EventData/Data[@Name='PrivilegeList']", "to": "user.privileges"},
+        
+        {"set": "is_admin", "value": "true"}
+      ]
+    },
+    
+    // User Account Created (4720)
+    {
+      "pattern": "<EventID>4720</EventID>",
+      "rewrites": [
+        {"set": "class_uid", "value": "3001"},
+        {"set": "class_name", "value": "Account Change"},
+        {"set": "category_uid", "value": "3"},
+        {"set": "category_name", "value": "Identity & Access Management"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Create"},
+        {"set": "type_uid", "value": "300101"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Windows Security"},
+        
+        // Actor (who created)
+        {"xpath": "//EventData/Data[@Name='SubjectUserName']", "to": "actor.user.name"},
+        {"xpath": "//EventData/Data[@Name='SubjectDomainName']", "to": "actor.user.domain"},
+        {"xpath": "//EventData/Data[@Name='SubjectUserSid']", "to": "actor.user.uid"},
+        
+        // Target (new account)
+        {"xpath": "//EventData/Data[@Name='TargetUserName']", "to": "user.name"},
+        {"xpath": "//EventData/Data[@Name='TargetDomainName']", "to": "user.domain"},
+        {"xpath": "//EventData/Data[@Name='TargetSid']", "to": "user.uid"},
+        {"xpath": "//EventData/Data[@Name='SamAccountName']", "to": "user.account.name"},
+        {"xpath": "//EventData/Data[@Name='DisplayName']", "to": "user.full_name"},
+        {"xpath": "//EventData/Data[@Name='UserPrincipalName']", "to": "user.email_addr"}
+      ]
+    }
+  ],
+  
+  "event_id_mappings": {
+    "4624": {"class": "Authentication", "activity": "Logon", "status": "Success"},
+    "4625": {"class": "Authentication", "activity": "Logon", "status": "Failure"},
+    "4634": {"class": "Authentication", "activity": "Logoff", "status": "Success"},
+    "4648": {"class": "Authentication", "activity": "Logon: Explicit Credentials"},
+    "4672": {"class": "Authentication", "activity": "Logon: Privileged"},
+    "4688": {"class": "Process Activity", "activity": "Launch"},
+    "4689": {"class": "Process Activity", "activity": "Terminate"},
+    "4720": {"class": "Account Change", "activity": "Create"},
+    "4722": {"class": "Account Change", "activity": "Enable"},
+    "4723": {"class": "Account Change", "activity": "Password Change"},
+    "4724": {"class": "Account Change", "activity": "Password Reset"},
+    "4725": {"class": "Account Change", "activity": "Disable"},
+    "4726": {"class": "Account Change", "activity": "Delete"},
+    "4728": {"class": "Group Membership", "activity": "Add"},
+    "4729": {"class": "Group Membership", "activity": "Remove"},
+    "4732": {"class": "Group Membership", "activity": "Add"},
+    "4733": {"class": "Group Membership", "activity": "Remove"}
+  }
+}

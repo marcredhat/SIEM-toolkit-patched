@@ -1,0 +1,74 @@
+{
+  // Generic SIM application syslog parser — OCSF v1.3.0
+  attributes: {
+    "metadata.version":             "1.3.0",
+    "metadata.product.vendor_name": "Generic",
+    "metadata.product.name":        "SIM Generic Application",
+    "Category":               "application",
+    "dataSource.vendor":      "Generic",
+    "dataSource.name":        "Generic Application",
+    "dataSource.category":    "application",
+    "category_uid":           3,
+    "category_name":          "IAM",
+    "class_uid":              3002,
+    "class_name":             "Authentication",
+    "activity_id":            1,
+    "type_uid":               300201,
+    "status_id":              1,
+    "severity_id":            1
+  },
+
+  patterns: {
+    ipv4: "\\d+\\.\\d+\\.\\d+\\.\\d+",
+    word: "\\S+",
+    rest: ".*"
+  },
+
+  formats: [
+    // Successful login
+    {
+      id: "generic_login_success",
+      attributes: {
+        class_uid: 3002, class_name: "Authentication",
+        type_uid: 300201,
+        status_id: 1, status: "Success"
+      },
+      format: ".*INFO User login successful user=$user_name=word$ src_ip=$src_ip=ipv4$ session_id=$session_id=word$",
+      halt: true
+    },
+
+    // Failed authentication → Detection Finding
+    {
+      id: "generic_auth_fail",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, type_uid: 200401,
+        finding_title: "Generic Application Authentication Failure",
+        severity_id: 4, severity: "High",
+        disposition_id: 2, disposition: "Blocked",
+        status_id: 2, status: "Failure"
+      },
+      format: ".*WARNING Failed authentication attempt user=$user_name=word$ src_ip=$src_ip=ipv4$ reason=$reason=word$ attempts=$attempts=word$",
+      halt: true,
+      rewrites: [
+        // Bump severity if attempts >= 5 (likely brute force)
+        { input: "attempts", output: "finding_title", match: "^[5-9]$|^\\d{2,}$", replace: "Generic Application Brute Force" },
+        { input: "attempts", output: "severity_id",   match: "^[5-9]$|^\\d{2,}$", replace: "5" },
+        { input: "attempts", output: "severity",      match: "^[5-9]$|^\\d{2,}$", replace: "Critical" }
+      ]
+    },
+
+    // Generic ERROR
+    {
+      id: "generic_error",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, type_uid: 200401,
+        finding_title: "Generic Application Error",
+        severity_id: 3, severity: "Medium"
+      },
+      format: ".*ERROR $detail=rest$",
+      halt: true
+    }
+  ]
+}

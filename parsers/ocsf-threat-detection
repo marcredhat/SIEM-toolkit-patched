@@ -1,0 +1,73 @@
+{
+  "duration": "24h",
+  "description": "Active threats and detection triggers across OCSF sources",
+  "graphs": [
+    {
+      "title": "About This Dashboard",
+      "graphStyle": "markdown",
+      "markdown": "## OCSF Threat Detection\nMonitors suspicious activity patterns across all OCSF-normalized log sources.\n\n**Key Indicators:**\n- Brute force attempts (3+ failed logins)\n- Port scanning (5+ unique ports)\n- Suspicious process execution\n- Lateral movement indicators",
+      "layout": {
+        "w": 60,
+        "h": 6,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "title": "Brute Force Attempts",
+      "graphStyle": "table",
+      "query": "message contains 'Failed password' or message contains 'authentication failure' | group failed_attempts=count() by src_ip, user_name | filter failed_attempts >= 3 | sort -failed_attempts | limit 20",
+      "layout": {
+        "w": 30,
+        "h": 14,
+        "x": 0,
+        "y": 6
+      }
+    },
+    {
+      "title": "Port Scan Sources",
+      "graphStyle": "table",
+      "query": "action = 'deny' dstport = * srcip = * | group hits=count() by srcip, dstport | group unique_ports=count() by srcip | filter unique_ports >= 5 | sort -unique_ports | limit 15",
+      "layout": {
+        "w": 30,
+        "h": 14,
+        "x": 30,
+        "y": 6
+      }
+    },
+    {
+      "title": "Suspicious Process Execution",
+      "graphStyle": "table",
+      "query": "message contains 'mimikatz' or message contains 'psexec' or message contains 'netcat' or message contains 'reverse shell' or message contains 'powershell -enc' | columns timestamp, serverHost, message | limit 50",
+      "layout": {
+        "w": 60,
+        "h": 14,
+        "x": 0,
+        "y": 20
+      }
+    },
+    {
+      "title": "Lateral Movement Indicators",
+      "graphStyle": "table",
+      "query": "(dstport = 22 or dstport = 3389 or dstport = 445 or dstport = 5985) srcip = * | group conns=count() by srcip, dstport | filter conns >= 3 | sort -conns | limit 15",
+      "layout": {
+        "w": 30,
+        "h": 14,
+        "x": 0,
+        "y": 34
+      }
+    },
+    {
+      "title": "C2 Beacon Activity",
+      "graphStyle": "stacked_bar",
+      "xAxis": "grouped_data",
+      "query": "(dstport = 4444 or dstport = 8080 or dstport = 1337) srcip = * | group count() by srcip | sort -count | limit 10",
+      "layout": {
+        "w": 30,
+        "h": 14,
+        "x": 30,
+        "y": 34
+      }
+    }
+  ]
+}

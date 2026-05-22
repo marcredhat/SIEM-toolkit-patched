@@ -1,0 +1,93 @@
+{
+  "duration": "24h",
+  "description": "Active threats and detection triggers across OCSF sources",
+  "parameters": [
+    {
+      "name": "severity_filter",
+      "values": [
+        {
+          "label": "All",
+          "value": "*"
+        },
+        {
+          "label": "Critical Only",
+          "value": "1"
+        },
+        {
+          "label": "High+",
+          "value": "1,2"
+        }
+      ],
+      "defaultValue": "*"
+    }
+  ],
+  "graphs": [
+    {
+      "title": "Threat Detection Overview",
+      "graphStyle": "markdown",
+      "markdown": "## OCSF Threat Detection\\n\\nMonitors suspicious activity patterns across all OCSF-normalized log sources.\\n\\n**Key Indicators:**\\n- Brute force attempts (3+ failed logins from same IP)\\n- Port scanning (5+ unique destination ports)\\n- Suspicious process execution (mimikatz, psexec, etc.)\\n- Lateral movement (SSH/RDP/SMB from internal IPs)",
+      "layout": {
+        "w": 60,
+        "h": 7,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "title": "Brute Force Attempts (3+ failures)",
+      "graphStyle": "table",
+      "query": "serverHost contains 'ocsf' (message contains 'Failed password' or message contains 'authentication failure') | group failed_attempts=count() by src_ip, user_name | filter failed_attempts >= 3 | sort -failed_attempts | limit 20",
+      "layout": {
+        "w": 30,
+        "h": 14,
+        "x": 0,
+        "y": 7
+      }
+    },
+    {
+      "title": "Port Scan Sources (5+ ports)",
+      "graphStyle": "table",
+      "query": "serverHost contains 'ocsf' action = 'deny' dstport = * srcip = * | group hits=count() by srcip, dstport | group unique_ports=count() by srcip | filter unique_ports >= 5 | sort -unique_ports | limit 15",
+      "layout": {
+        "w": 30,
+        "h": 14,
+        "x": 30,
+        "y": 7
+      }
+    },
+    {
+      "title": "Suspicious Process Execution",
+      "graphStyle": "table",
+      "query": "serverHost contains 'ocsf' (message contains 'mimikatz' or message contains 'psexec' or message contains 'netcat' or message contains 'reverse shell' or message contains 'powershell -enc' or message contains 'certutil -decode') | columns timestamp, serverHost, message | limit 50",
+      "layout": {
+        "w": 60,
+        "h": 14,
+        "x": 0,
+        "y": 21
+      }
+    },
+    {
+      "title": "Lateral Movement (SSH/RDP/SMB)",
+      "graphStyle": "table",
+      "query": "serverHost contains 'ocsf' (dstport = 22 or dstport = 3389 or dstport = 445 or dstport = 5985) srcip = * | group conns=count() by srcip, dstport | filter conns >= 3 | sort -conns | limit 15",
+      "layout": {
+        "w": 30,
+        "h": 14,
+        "x": 0,
+        "y": 35
+      }
+    },
+    {
+      "title": "C2 Beacon Activity (suspicious ports)",
+      "graphStyle": "stacked_bar",
+      "xAxis": "grouped_data",
+      "query": "serverHost contains 'ocsf' (dstport = 4444 or dstport = 8080 or dstport = 1337 or dstport = 6666) srcip = * | group count() by srcip | sort -count | limit 10",
+      "layout": {
+        "w": 30,
+        "h": 14,
+        "x": 30,
+        "y": 35
+      }
+    }
+  ]
+}

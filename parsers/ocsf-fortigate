@@ -1,0 +1,169 @@
+// SentinelOne AI SIEM Parser: Fortinet FortiGate Security Gateway
+// OCSF Schema Version: 1.1.0
+// Maps FortiGate key=value logs to OCSF classes
+// Primary Classes: Network Activity (4001), Security Finding (2001), Detection Finding (2004)
+
+{
+  "parserName": "FortiGate-OCSF",
+  "version": "1.0.0",
+  "vendor": "Fortinet",
+  "product": "FortiGate",
+  "format": "kv",
+  "delimiter": " ",
+  "kvSeparator": "=",
+  
+  "patterns": [
+    // Traffic logs
+    {
+      "pattern": "type=\"traffic\"",
+      "rewrites": [
+        {"set": "class_uid", "value": "4001"},
+        {"set": "class_name", "value": "Network Activity"},
+        {"set": "category_uid", "value": "4"},
+        {"set": "category_name", "value": "Network Activity"},
+        
+        // Activity mapping
+        {"lookup": "action", "map": {"accept": 1, "deny": 2, "drop": 5, "close": 4}, "to": "activity_id"},
+        {"lookup": "action", "map": {"accept": "Traffic Allowed", "deny": "Traffic Denied", "drop": "Traffic Dropped", "close": "Connection Closed"}, "to": "activity_name"},
+        
+        // Metadata
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "FortiGate"},
+        {"set": "metadata.product.vendor_name", "value": "Fortinet"},
+        {"copy": "devname", "to": "metadata.product.feature.uid"},
+        {"copy": "devid", "to": "device.uid"},
+        {"copy": "logid", "to": "metadata.log_name"},
+        
+        // Time
+        {"parseTimestamp": "date time", "format": "yyyy-MM-dd HH:mm:ss", "to": "time"},
+        {"copy": "eventtime", "to": "time", "transform": "epochToISO"},
+        
+        // Source endpoint
+        {"copy": "srcip", "to": "src_endpoint.ip"},
+        {"copy": "srcport", "to": "src_endpoint.port"},
+        {"copy": "srcintf", "to": "src_endpoint.interface_name"},
+        {"copy": "srccountry", "to": "src_endpoint.location.country"},
+        
+        // Destination endpoint
+        {"copy": "dstip", "to": "dst_endpoint.ip"},
+        {"copy": "dstport", "to": "dst_endpoint.port"},
+        {"copy": "dstintf", "to": "dst_endpoint.interface_name"},
+        {"copy": "dstcountry", "to": "dst_endpoint.location.country"},
+        
+        // Connection info
+        {"copy": "proto", "to": "connection_info.protocol_num"},
+        {"lookup": "proto", "map": {"6": "TCP", "17": "UDP", "1": "ICMP"}, "to": "connection_info.protocol_name"},
+        {"copy": "sessionid", "to": "connection_info.session.uid"},
+        {"copy": "duration", "to": "connection_info.session.duration"},
+        
+        // Traffic stats
+        {"copy": "sentbyte", "to": "traffic.bytes_out"},
+        {"copy": "rcvdbyte", "to": "traffic.bytes_in"},
+        {"copy": "sentpkt", "to": "traffic.packets_out"},
+        {"copy": "rcvdpkt", "to": "traffic.packets_in"},
+        
+        // Policy
+        {"copy": "policyid", "to": "policy.uid"},
+        {"copy": "policyname", "to": "policy.name"},
+        
+        // Application
+        {"copy": "app", "to": "app_name"},
+        {"copy": "appcat", "to": "app.category"},
+        {"copy": "apprisk", "to": "app.risk_level"},
+        
+        // NAT
+        {"copy": "transip", "to": "proxy.ip"},
+        {"copy": "transport", "to": "proxy.port"},
+        
+        // Status
+        {"set": "status_id", "value": "1"},
+        {"lookup": "action", "map": {"accept": "Success", "deny": "Failure", "drop": "Failure"}, "to": "status"}
+      ]
+    },
+    
+    // IPS/UTM logs
+    {
+      "pattern": "type=\"utm\" subtype=\"ips\"",
+      "rewrites": [
+        {"set": "class_uid", "value": "2004"},
+        {"set": "class_name", "value": "Detection Finding"},
+        {"set": "category_uid", "value": "2"},
+        {"set": "category_name", "value": "Findings"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "FortiGate IPS"},
+        {"set": "metadata.product.vendor_name", "value": "Fortinet"},
+        
+        // Finding info
+        {"copy": "attack", "to": "finding_info.title"},
+        {"copy": "attackid", "to": "finding_info.uid"},
+        {"copy": "ref", "to": "finding_info.src_url"},
+        {"copy": "msg", "to": "finding_info.desc"},
+        
+        // Severity
+        {"lookup": "severity", "map": {"critical": 5, "high": 4, "medium": 3, "low": 2, "info": 1}, "to": "severity_id"},
+        {"copy": "severity", "to": "severity"},
+        
+        // Endpoints
+        {"copy": "srcip", "to": "src_endpoint.ip"},
+        {"copy": "srcport", "to": "src_endpoint.port"},
+        {"copy": "dstip", "to": "dst_endpoint.ip"},
+        {"copy": "dstport", "to": "dst_endpoint.port"},
+        
+        // Action
+        {"lookup": "action", "map": {"dropped": 2, "blocked": 2, "detected": 1, "pass": 0}, "to": "activity_id"}
+      ]
+    },
+    
+    // Virus/Malware logs
+    {
+      "pattern": "type=\"utm\" subtype=\"virus\"",
+      "rewrites": [
+        {"set": "class_uid", "value": "2001"},
+        {"set": "class_name", "value": "Security Finding"},
+        {"set": "finding_info.types", "value": ["Malware"]},
+        
+        {"copy": "virusname", "to": "malware.name"},
+        {"copy": "filename", "to": "file.name"},
+        {"copy": "analyticscksum", "to": "file.hashes.sha256"},
+        {"copy": "dtype", "to": "file.type_id"},
+        
+        {"lookup": "action", "map": {"blocked": 2, "detected": 1, "quarantined": 3}, "to": "activity_id"}
+      ]
+    },
+    
+    // Web filter logs
+    {
+      "pattern": "type=\"utm\" subtype=\"webfilter\"",
+      "rewrites": [
+        {"set": "class_uid", "value": "4002"},
+        {"set": "class_name", "value": "HTTP Activity"},
+        
+        {"copy": "hostname", "to": "http_request.url.hostname"},
+        {"copy": "url", "to": "http_request.url.path"},
+        {"copy": "method", "to": "http_request.http_method"},
+        {"copy": "cat", "to": "http_request.url.category_ids"},
+        {"copy": "catdesc", "to": "http_request.url.categories"},
+        
+        {"lookup": "action", "map": {"blocked": 2, "passthrough": 1, "warning": 3}, "to": "activity_id"}
+      ]
+    },
+    
+    // System/Auth logs
+    {
+      "pattern": "type=\"event\" subtype=\"system\"",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        
+        {"copy": "user", "to": "actor.user.name"},
+        {"copy": "ui", "to": "src_endpoint.name"},
+        {"copy": "action", "to": "activity_name"},
+        
+        {"lookup": "status", "map": {"success": 1, "failed": 2}, "to": "status_id"},
+        {"copy": "reason", "to": "status_detail"},
+        {"copy": "msg", "to": "message"}
+      ]
+    }
+  ]
+}

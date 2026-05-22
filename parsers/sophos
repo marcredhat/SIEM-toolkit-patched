@@ -1,0 +1,447 @@
+{
+  attributes: {
+    "metadata.version":    "2.0.0",
+    "dataSource.vendor":   "Sophos",
+    "dataSource.name":     "Sophos Firewall",
+    "dataSource.category": "security",
+    "metadata.product.vendor_name": "Sophos",
+    "metadata.product.name":        "Sophos Firewall",
+    "metadata.log_provider":        "syslog",
+    "severity_id": 1,
+    "severity": "Informational"
+  },
+
+  patterns: {
+    tsval:     "[^\"]+",
+    qval:      "[^\"]+",
+    nqval:     "[^ ]+",
+    ip:        "\\d+\\.\\d+\\.\\d+\\.\\d+",
+    mac:       "[0-9A-Fa-f:]+",
+    num:       "\\d+",
+    rest:      ".*"
+  },
+
+  formats: [
+    // FIREWALL ALLOWED - match log_type="Firewall" and log_subtype="Allowed"
+    {
+      id: "fw_allow",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 6, activity_name: "Traffic",
+        type_uid: 400106,
+        disposition_id: 1, disposition: "Allowed"
+      },
+      format: ".*log_type=\"Firewall\".*log_subtype=\"Allowed\".*src_ip=\"$src_ip=ip$\".*dst_ip=\"$dst_ip=ip$\".*protocol=\"$protocol=qval$\".*",
+      rewrites: [
+        { input: "message", output: "src_port", match: ".*src_port=$v=num$.*" },
+        { input: "message", output: "dst_port", match: ".*dst_port=$v=num$.*" },
+        { input: "message", output: "fw_rule", match: ".*fw_rule_name=\"$v=qval$\".*" },
+        { input: "message", output: "src_zone", match: ".*src_zone=\"$v=qval$\".*" },
+        { input: "message", output: "dst_zone", match: ".*dst_zone=\"$v=qval$\".*" },
+        { input: "message", output: "src_mac", match: ".*src_mac=\"$v=mac$\".*" },
+        { input: "message", output: "dev", match: ".*device_name=\"$v=qval$\".*" }
+      ],
+      halt: true
+    },
+
+    // FIREWALL DENIED
+    {
+      id: "fw_deny",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 6, activity_name: "Traffic",
+        type_uid: 400106,
+        disposition_id: 2, disposition: "Blocked",
+        severity_id: 3, severity: "Medium"
+      },
+      format: ".*log_type=\"Firewall\".*log_subtype=\"Denied\".*src_ip=\"$src_ip=ip$\".*dst_ip=\"$dst_ip=ip$\".*protocol=\"$protocol=qval$\".*",
+      rewrites: [
+        { input: "message", output: "src_port", match: ".*src_port=$v=num$.*" },
+        { input: "message", output: "dst_port", match: ".*dst_port=$v=num$.*" },
+        { input: "message", output: "dev", match: ".*device_name=\"$v=qval$\".*" }
+      ],
+      halt: true
+    },
+
+    // IPS DETECT
+    {
+      id: "ips_detect",
+      attributes: {
+        class_uid: 4002, class_name: "Detection Finding",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 400201,
+        severity_id: 3, severity: "Medium"
+      },
+      format: ".*log_type=\"IDP\".*log_subtype=\"Detect\".*",
+      rewrites: [
+        { input: "message", output: "sig_id", match: ".*signature_id=$v=num$.*" },
+        { input: "message", output: "sig_msg", match: ".*signature_msg=\"$v=qval$\".*" },
+        { input: "message", output: "src_ip", match: ".*src_ip=$v=ip$.*" },
+        { input: "message", output: "dst_ip", match: ".*dst_ip=$v=ip$.*" },
+        { input: "message", output: "src_port", match: ".*src_port=$v=num$.*" },
+        { input: "message", output: "dst_port", match: ".*dst_port=$v=num$.*" },
+        { input: "message", output: "protocol", match: ".*protocol=\"$v=qval$\".*" },
+        { input: "message", output: "classification", match: ".*classification=\"$v=qval$\".*" },
+        { input: "message", output: "category", match: ".*category=\"$v=qval$\".*" },
+        { input: "message", output: "dev", match: ".*device_name=\"$v=qval$\".*" }
+      ],
+      halt: true
+    },
+
+    // IPS DROP
+    {
+      id: "ips_drop",
+      attributes: {
+        class_uid: 4002, class_name: "Detection Finding",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 400201,
+        disposition_id: 2, disposition: "Blocked",
+        severity_id: 4, severity: "High"
+      },
+      format: ".*log_type=\"IDP\".*log_subtype=\"Drop\".*",
+      rewrites: [
+        { input: "message", output: "sig_id", match: ".*signature_id=$v=num$.*" },
+        { input: "message", output: "sig_msg", match: ".*signature_msg=\"$v=qval$\".*" },
+        { input: "message", output: "src_ip", match: ".*src_ip=$v=ip$.*" },
+        { input: "message", output: "dst_ip", match: ".*dst_ip=$v=ip$.*" },
+        { input: "message", output: "src_port", match: ".*src_port=$v=num$.*" },
+        { input: "message", output: "dst_port", match: ".*dst_port=$v=num$.*" },
+        { input: "message", output: "protocol", match: ".*protocol=\"$v=qval$\".*" },
+        { input: "message", output: "classification", match: ".*classification=\"$v=qval$\".*" },
+        { input: "message", output: "dev", match: ".*device_name=\"$v=qval$\".*" }
+      ],
+      halt: true
+    },
+
+    // ATP THREAT
+    {
+      id: "atp",
+      attributes: {
+        class_uid: 4002, class_name: "Detection Finding",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 400201,
+        severity_id: 4, severity: "High"
+      },
+      format: ".*log_type=\"ATP\".*",
+      rewrites: [
+        { input: "message", output: "src_ip", match: ".*src_ip=\"$v=ip$\".*" },
+        { input: "message", output: "dst_ip", match: ".*dst_ip=\"$v=ip$\".*" },
+        { input: "message", output: "malware", match: ".*malware=\"$v=qval$\".*" },
+        { input: "message", output: "threatfeed", match: ".*threatfeed=\"$v=qval$\".*" },
+        { input: "message", output: "protocol", match: ".*protocol=\"$v=qval$\".*" },
+        { input: "message", output: "dev", match: ".*device_name=\"$v=qval$\".*" }
+      ],
+      halt: true
+    },
+
+    // AUTH SUCCESS
+    {
+      id: "auth_ok",
+      attributes: {
+        class_uid: 3002, class_name: "Authentication",
+        category_uid: 3, category_name: "Identity & Access Management",
+        activity_id: 1, activity_name: "Logon",
+        type_uid: 300201,
+        status_id: 1, status: "Success"
+      },
+      format: ".*log_subtype=\"Authentication\".*status=\"Successful\".*",
+      rewrites: [
+        { input: "message", output: "user", match: ".*user=\"$v=qval$\".*" },
+        { input: "message", output: "src_ip", match: ".*src_ip=\"$v=ip$\".*" },
+        { input: "message", output: "auth_comp", match: ".*log_component=\"$v=qval$\".*" },
+        { input: "message", output: "user_grp", match: ".*user_group=\"$v=qval$\".*" },
+        { input: "message", output: "auth_mech", match: ".*auth_mechanism=\"$v=qval$\".*" },
+        { input: "message", output: "client", match: ".*client_used=\"$v=qval$\".*" }
+      ],
+      halt: true
+    },
+
+    // AUTH FAILURE
+    {
+      id: "auth_fail",
+      attributes: {
+        class_uid: 3002, class_name: "Authentication",
+        category_uid: 3, category_name: "Identity & Access Management",
+        activity_id: 1, activity_name: "Logon",
+        type_uid: 300201,
+        status_id: 2, status: "Failure",
+        severity_id: 3, severity: "Medium"
+      },
+      format: ".*log_subtype=\"Authentication\".*status=\"Failed\".*",
+      rewrites: [
+        { input: "message", output: "user", match: ".*user=\"$v=qval$\".*" },
+        { input: "message", output: "src_ip", match: ".*src_ip=\"$v=ip$\".*" },
+        { input: "message", output: "auth_comp", match: ".*log_component=\"$v=qval$\".*" },
+        { input: "message", output: "reason", match: ".*reason=\"$v=qval$\".*" },
+        { input: "message", output: "auth_mech", match: ".*auth_mechanism=\"$v=qval$\".*" }
+      ],
+      halt: true
+    },
+
+    // IPSEC ESTABLISHED
+    {
+      id: "ipsec_up",
+      attributes: {
+        class_uid: 4014, class_name: "Tunnel Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 1, activity_name: "Open",
+        type_uid: 401401,
+        status_id: 1, status: "Success"
+      },
+      format: ".*log_component=\"IPSec\".*status=\"Established\".*",
+      rewrites: [
+        { input: "message", output: "con_name", match: ".*con_name=\"$v=qval$\".*" },
+        { input: "message", output: "src_ip", match: ".*src_ip=\"$v=ip$\".*" },
+        { input: "message", output: "dst_ip", match: ".*dst_ip=\"$v=ip$\".*" },
+        { input: "message", output: "local_net", match: ".*local_network=\"$v=qval$\".*" },
+        { input: "message", output: "remote_net", match: ".*remote_network=\"$v=qval$\".*" }
+      ],
+      halt: true
+    },
+
+    // IPSEC TERMINATED
+    {
+      id: "ipsec_down",
+      attributes: {
+        class_uid: 4014, class_name: "Tunnel Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 2, activity_name: "Close",
+        type_uid: 401402
+      },
+      format: ".*log_component=\"IPSec\".*status=\"Terminated\".*",
+      rewrites: [
+        { input: "message", output: "con_name", match: ".*con_name=\"$v=qval$\".*" },
+        { input: "message", output: "src_ip", match: ".*src_ip=\"$v=ip$\".*" },
+        { input: "message", output: "dst_ip", match: ".*dst_ip=\"$v=ip$\".*" },
+        { input: "message", output: "local_net", match: ".*local_network=\"$v=qval$\".*" },
+        { input: "message", output: "remote_net", match: ".*remote_network=\"$v=qval$\".*" }
+      ],
+      halt: true
+    },
+
+    // DHCP
+    {
+      id: "dhcp",
+      attributes: {
+        class_uid: 4004, class_name: "DHCP Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 1, activity_name: "Lease",
+        type_uid: 400401
+      },
+      format: ".*log_component=\"DHCP Server\".*",
+      rewrites: [
+        { input: "message", output: "client_ip", match: ".*reported_ip=\"$v=ip$\".*" },
+        { input: "message", output: "client_mac", match: ".*src_mac=\"$v=mac$\".*" },
+        { input: "message", output: "hostname", match: ".*reported_host=\"$v=qval$\".*" },
+        { input: "message", output: "lease_time", match: ".*lease_time=$v=num$.*" },
+        { input: "message", output: "dhcp_status", match: ".*status=\"$v=qval$\".*" }
+      ],
+      halt: true
+    },
+
+    // ANTIVIRUS - full format with all fields
+    {
+      id: "av_full",
+      attributes: {
+        class_uid: 4002, class_name: "Detection Finding",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 400201,
+        severity_id: 4, severity: "High"
+      },
+      format: ".*log_type=\"Anti-Virus\".*virus=\"$malware=qval$\".*src_ip=\"$src_ip=ip$\".*dst_ip=\"$dst_ip=ip$\".*filename=\"$filename=qval$\".*url=\"$url=qval$\".*user=\"$user=qval$\".*",
+      halt: true
+    },
+    // ANTIVIRUS - minimal (virus, src, dst only)
+    {
+      id: "av_min",
+      attributes: {
+        class_uid: 4002, class_name: "Detection Finding",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 400201,
+        severity_id: 4, severity: "High"
+      },
+      format: ".*log_type=\"Anti-Virus\".*virus=\"$malware=qval$\".*src_ip=\"$src_ip=ip$\".*dst_ip=\"$dst_ip=ip$\".*",
+      halt: true
+    },
+
+    // WEB FILTER ALLOWED
+    {
+      id: "web_allow",
+      attributes: {
+        class_uid: 4007, class_name: "Web Resources Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 1, activity_name: "Access",
+        type_uid: 400701,
+        disposition_id: 1, disposition: "Allowed"
+      },
+      format: ".*log_type=\"Content Filtering\".*log_subtype=\"Allowed\".*",
+      rewrites: [
+        { input: "message", output: "src_ip", match: ".*src_ip=\"$v=ip$\".*" },
+        { input: "message", output: "dst_ip", match: ".*dst_ip=\"$v=ip$\".*" },
+        { input: "message", output: "url", match: ".*url=\"$v=qval$\".*" },
+        { input: "message", output: "user", match: ".*user=\"$v=qval$\".*" },
+        { input: "message", output: "category", match: ".*category=\"$v=qval$\".*" }
+      ],
+      halt: true
+    },
+
+    // WEB FILTER DENIED
+    {
+      id: "web_deny",
+      attributes: {
+        class_uid: 4007, class_name: "Web Resources Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 1, activity_name: "Access",
+        type_uid: 400701,
+        disposition_id: 2, disposition: "Blocked",
+        severity_id: 2, severity: "Low"
+      },
+      format: ".*log_type=\"Content Filtering\".*log_subtype=\"Denied\".*",
+      rewrites: [
+        { input: "message", output: "src_ip", match: ".*src_ip=\"$v=ip$\".*" },
+        { input: "message", output: "dst_ip", match: ".*dst_ip=\"$v=ip$\".*" },
+        { input: "message", output: "url", match: ".*url=\"$v=qval$\".*" },
+        { input: "message", output: "user", match: ".*user=\"$v=qval$\".*" },
+        { input: "message", output: "category", match: ".*category=\"$v=qval$\".*" },
+        { input: "message", output: "reason", match: ".*reason=\"$v=qval$\".*" }
+      ],
+      halt: true
+    },
+
+    // SSL VPN CONNECT
+    {
+      id: "sslvpn_up",
+      attributes: {
+        class_uid: 4014, class_name: "Tunnel Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 1, activity_name: "Open",
+        type_uid: 401401
+      },
+      format: ".*log_component=\"SSL VPN\".*status=\"Connected\".*",
+      rewrites: [
+        { input: "message", output: "user", match: ".*user=\"$v=qval$\".*" },
+        { input: "message", output: "src_ip", match: ".*src_ip=\"$v=ip$\".*" },
+        { input: "message", output: "tunnel_ip", match: ".*tunnel_ip=\"$v=ip$\".*" }
+      ],
+      halt: true
+    },
+
+    // SSL VPN DISCONNECT
+    {
+      id: "sslvpn_down",
+      attributes: {
+        class_uid: 4014, class_name: "Tunnel Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 2, activity_name: "Close",
+        type_uid: 401402
+      },
+      format: ".*log_component=\"SSL VPN\".*status=\"Disconnected\".*",
+      rewrites: [
+        { input: "message", output: "user", match: ".*user=\"$v=qval$\".*" },
+        { input: "message", output: "src_ip", match: ".*src_ip=\"$v=ip$\".*" },
+        { input: "message", output: "bytes_sent", match: ".*bytes_sent=$v=num$.*" },
+        { input: "message", output: "bytes_recv", match: ".*bytes_received=$v=num$.*" }
+      ],
+      halt: true
+    },
+
+    // WAF
+    {
+      id: "waf",
+      attributes: {
+        class_uid: 4007, class_name: "Web Resources Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 1, activity_name: "Access",
+        type_uid: 400701,
+        severity_id: 3, severity: "Medium"
+      },
+      format: ".*log_type=\"WAF\".*",
+      rewrites: [
+        { input: "message", output: "src_ip", match: ".*src_ip=\"$v=ip$\".*" },
+        { input: "message", output: "dst_ip", match: ".*dst_ip=\"$v=ip$\".*" },
+        { input: "message", output: "url", match: ".*url=\"$v=qval$\".*" },
+        { input: "message", output: "reason", match: ".*reason=\"$v=qval$\".*" }
+      ],
+      halt: true
+    },
+
+    // FALLBACK - extract common fields from any Sophos log
+    {
+      id: "fallback",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 0, activity_name: "Unknown",
+        type_uid: 400100
+      },
+      format: "$body=rest$",
+      rewrites: [
+        { input: "message", output: "log_type", match: ".*log_type=\"$v=qval$\".*" },
+        { input: "message", output: "log_comp", match: ".*log_component=\"$v=qval$\".*" },
+        { input: "message", output: "subtype", match: ".*log_subtype=\"$v=qval$\".*" },
+        { input: "message", output: "src_ip", match: ".*src_ip=\"$v=ip$\".*" },
+        { input: "message", output: "dst_ip", match: ".*dst_ip=\"$v=ip$\".*" },
+        { input: "message", output: "user", match: ".*user=\"$v=qval$\".*" },
+        { input: "message", output: "dev", match: ".*device_name=\"$v=qval$\".*" }
+      ]
+    }
+  ],
+
+  mappings: {
+    version: 1,
+    mappings: [
+      {
+        transformations: [
+          { rename: { from: "src_ip", to: "src_endpoint.ip" } },
+          { rename: { from: "dst_ip", to: "dst_endpoint.ip" } },
+          { rename: { from: "src_port", to: "src_endpoint.port" } },
+          { rename: { from: "dst_port", to: "dst_endpoint.port" } },
+          { rename: { from: "src_mac", to: "src_endpoint.mac" } },
+          { rename: { from: "protocol", to: "connection_info.protocol_name" } },
+          { rename: { from: "bytes_sent", to: "traffic.bytes_out" } },
+          { rename: { from: "bytes_recv", to: "traffic.bytes_in" } },
+          { rename: { from: "user", to: "actor.user.name" } },
+          { rename: { from: "user_grp", to: "actor.user.groups" } },
+          { rename: { from: "auth_mech", to: "auth_protocol" } },
+          { rename: { from: "fw_rule", to: "unmapped.fw_rule_name" } },
+          { rename: { from: "src_zone", to: "src_endpoint.zone" } },
+          { rename: { from: "dst_zone", to: "dst_endpoint.zone" } },
+          { rename: { from: "in_iface", to: "src_endpoint.interface_name" } },
+          { rename: { from: "out_iface", to: "dst_endpoint.interface_name" } },
+          { rename: { from: "sig_id", to: "finding_info.uid" } },
+          { rename: { from: "sig_msg", to: "finding_info.title" } },
+          { rename: { from: "classification", to: "finding_info.types" } },
+          { rename: { from: "category", to: "unmapped.category" } },
+          { rename: { from: "malware", to: "malware.name" } },
+          { rename: { from: "threatfeed", to: "unmapped.threatfeed" } },
+          { rename: { from: "url", to: "http_request.url.original" } },
+          { rename: { from: "filename", to: "file.name" } },
+          { rename: { from: "con_name", to: "unmapped.connection_name" } },
+          { rename: { from: "local_net", to: "unmapped.local_network" } },
+          { rename: { from: "remote_net", to: "unmapped.remote_network" } },
+          { rename: { from: "client_ip", to: "dst_endpoint.ip" } },
+          { rename: { from: "client_mac", to: "dst_endpoint.mac" } },
+          { rename: { from: "hostname", to: "dst_endpoint.hostname" } },
+          { rename: { from: "tunnel_ip", to: "unmapped.tunnel_ip" } },
+          { rename: { from: "auth_comp", to: "unmapped.auth_component" } },
+          { rename: { from: "log_type", to: "unmapped.log_type" } },
+          { rename: { from: "log_comp", to: "unmapped.log_component" } },
+          { rename: { from: "subtype", to: "unmapped.log_subtype" } },
+          { rename: { from: "reason", to: "unmapped.reason" } },
+          { rename: { from: "client", to: "unmapped.client_used" } },
+          { rename: { from: "dhcp_status", to: "unmapped.dhcp_status" } },
+          { rename: { from: "lease_time", to: "unmapped.lease_time" } },
+          { rename: { from: "dev", to: "device.name" } },
+          { rename: { from: "body", to: "unmapped.raw_body" } }
+        ]
+      }
+    ]
+  }
+}

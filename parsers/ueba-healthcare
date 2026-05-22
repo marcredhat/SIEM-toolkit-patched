@@ -1,0 +1,204 @@
+{
+  "duration": "24h",
+  "description": "Healthcare UEBA \u2014 auth, TI/Konnektor, data-transfer, SMC-B/HBA card ops. Powered by ueba/01..12 feature extractors.",
+  "graphs": [
+    {
+      "title": "Auth events (24h)",
+      "graphStyle": "number",
+      "query": "| filter( class_uid == 3002 )\n| group n = count()",
+      "layout": {
+        "w": 15,
+        "h": 6,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "title": "Auth failures (24h)",
+      "graphStyle": "number",
+      "query": "| filter( class_uid == 3002 )\n| parse '\"outcome\": \"$outcome{regex=[^\"]+}$\"' from message\n| group n = count( outcome == \"failure\" )",
+      "layout": {
+        "w": 15,
+        "h": 6,
+        "x": 15,
+        "y": 0
+      }
+    },
+    {
+      "title": "Konnektor disconnects (24h)",
+      "graphStyle": "number",
+      "query": "| filter( class_uid == 4001 )\n| parse '\"event_type\": \"$event_type{regex=[^\"]+}$\"' from message\n| group n = count( event_type == \"KONNEKTOR_DISCONNECTED\" )",
+      "layout": {
+        "w": 15,
+        "h": 6,
+        "x": 30,
+        "y": 0
+      }
+    },
+    {
+      "title": "Certs expired/expiring (24h)",
+      "graphStyle": "number",
+      "query": "| filter( class_uid == 4001 )\n| parse '\"event_type\": \"$event_type{regex=[^\"]+}$\"' from message\n| group n = count( event_type == \"CERTIFICATE_EXPIRED\" or event_type == \"CERTIFICATE_EXPIRING\" )",
+      "layout": {
+        "w": 15,
+        "h": 6,
+        "x": 45,
+        "y": 0
+      }
+    },
+    {
+      "title": "Auth success vs failure (hourly)",
+      "graphStyle": "line",
+      "query": "| filter( class_uid == 3002 )\n| parse '\"outcome\": \"$outcome{regex=[^\"]+}$\"' from message\n| group\n    success = count( outcome == \"success\" ),\n    failure = count( outcome == \"failure\" )\n  by hour = timebucket('1 hour')\n| sort hour",
+      "layout": {
+        "w": 30,
+        "h": 14,
+        "x": 0,
+        "y": 6
+      }
+    },
+    {
+      "title": "Konnektor health (hourly)",
+      "graphStyle": "line",
+      "query": "| filter( class_uid == 4001 )\n| parse '\"event_type\": \"$event_type{regex=[^\"]+}$\"' from message\n| group\n    connected    = count( event_type == \"KONNEKTOR_CONNECTED\" ),\n    disconnected = count( event_type == \"KONNEKTOR_DISCONNECTED\" ),\n    vpn_failed   = count( event_type == \"VPN_TUNNEL_FAILED\" )\n  by hour = timebucket('1 hour')\n| sort hour",
+      "layout": {
+        "w": 30,
+        "h": 14,
+        "x": 30,
+        "y": 6
+      }
+    },
+    {
+      "title": "Top users by auth failures",
+      "graphStyle": "table",
+      "query": "| filter( class_uid == 3002 )\n| parse '\"username\": \"$user{regex=[^\"]+}$\"' from message\n| parse '\"outcome\": \"$outcome{regex=[^\"]+}$\"' from message\n| group fails = count( outcome == \"failure\" ) by user\n| filter user = *\n| sort - fails\n| limit 20",
+      "layout": {
+        "w": 30,
+        "h": 14,
+        "x": 0,
+        "y": 20
+      }
+    },
+    {
+      "title": "Top users by password reset / lockout",
+      "graphStyle": "table",
+      "query": "| filter( class_uid == 3002 )\n| parse '\"username\": \"$user{regex=[^\"]+}$\"' from message\n| parse '\"event_type\": \"$event_type{regex=[^\"]+}$\"' from message\n| group\n    pwd_reset  = count( event_type == \"PASSWORD_RESET_REQUEST\" ),\n    locked     = count( event_type == \"ACCOUNT_LOCKED\" )\n  by user\n| filter user = *\n| sort - locked\n| limit 20",
+      "layout": {
+        "w": 30,
+        "h": 14,
+        "x": 30,
+        "y": 20
+      }
+    },
+    {
+      "title": "Top Konnektor hosts by VPN failures",
+      "graphStyle": "table",
+      "query": "| filter( class_uid == 4001 )\n| parse '\"hostname\": \"$host{regex=[^\"]+}$\"' from message\n| parse '\"event_type\": \"$event_type{regex=[^\"]+}$\"' from message\n| group vpn_failed = count( event_type == \"VPN_TUNNEL_FAILED\" ) by host\n| filter host = *\n| sort - vpn_failed\n| limit 20",
+      "layout": {
+        "w": 30,
+        "h": 14,
+        "x": 0,
+        "y": 34
+      }
+    },
+    {
+      "title": "Cert lifecycle by host",
+      "graphStyle": "table",
+      "query": "| filter( class_uid == 4001 )\n| parse '\"hostname\": \"$host{regex=[^\"]+}$\"' from message\n| parse '\"event_type\": \"$event_type{regex=[^\"]+}$\"' from message\n| group\n    expired  = count( event_type == \"CERTIFICATE_EXPIRED\" ),\n    expiring = count( event_type == \"CERTIFICATE_EXPIRING\" ),\n    valid    = count( event_type == \"CERTIFICATE_VALID\" )\n  by host\n| filter host = *\n| sort - expired, - expiring\n| limit 20",
+      "layout": {
+        "w": 30,
+        "h": 14,
+        "x": 30,
+        "y": 34
+      }
+    },
+    {
+      "title": "HL7 / FHIR / Exports by user",
+      "graphStyle": "table",
+      "query": "| filter( class_uid == 4001 )\n| parse '\"username\": \"$user{regex=[^\"]+}$\"' from message\n| parse '\"event_type\": \"$event_type{regex=[^\"]+}$\"' from message\n| group\n    hl7_recv = count( event_type == \"HL7_MESSAGE_RECEIVED\" ),\n    hl7_sent = count( event_type == \"HL7_MESSAGE_SENT\" ),\n    fhir     = count( event_type == \"FHIR_API_REQUEST\" ),\n    exports  = count( event_type == \"DATA_EXPORT_COMPLETED\" )\n  by user\n| filter user = *\n| sort - exports, - hl7_recv\n| limit 20",
+      "layout": {
+        "w": 30,
+        "h": 14,
+        "x": 0,
+        "y": 48
+      }
+    },
+    {
+      "title": "Total records exported by user (24h)",
+      "graphStyle": "table",
+      "query": "| filter( class_uid == 4001 )\n| parse '\"username\": \"$user{regex=[^\"]+}$\"' from message\n| parse '\"record_count\": $record_count{regex=[0-9]+}$' from message\n| group total_records = sum( record_count ) by user\n| filter user = *\n| sort - total_records\n| limit 20",
+      "layout": {
+        "w": 30,
+        "h": 14,
+        "x": 30,
+        "y": 48
+      }
+    },
+    {
+      "title": "External destinations by user",
+      "graphStyle": "table",
+      "query": "| filter( class_uid == 4001 )\n| parse '\"username\": \"$user{regex=[^\"]+}$\"' from message\n| parse '\"destination\": \"$dest{regex=[^\"]+}$\"' from message\n| group external = count( dest == \"External Specialist\" ) by user, dest\n| filter user = *\n| filter dest = *\n| sort - external\n| limit 20",
+      "layout": {
+        "w": 30,
+        "h": 14,
+        "x": 0,
+        "y": 62
+      }
+    },
+    {
+      "title": "Auth failures by role (24h)",
+      "graphStyle": "table",
+      "query": "| filter( class_uid == 3002 )\n| parse '\"role\": \"$role{regex=[^\"]+}$\"' from message\n| parse '\"outcome\": \"$outcome{regex=[^\"]+}$\"' from message\n| group fails = count( outcome == \"failure\" ) by role\n| filter role = *\n| sort - fails",
+      "layout": {
+        "w": 30,
+        "h": 14,
+        "x": 30,
+        "y": 62
+      }
+    },
+    {
+      "title": "SMC-B PIN events per Konnektor host",
+      "graphStyle": "table",
+      "query": "| filter( class_uid == 3002 )\n| parse '\"hostname\": \"$host{regex=[^\"]+}$\"' from message\n| parse '\"event_type\": \"$event_type{regex=[^\"]+}$\"' from message\n| group\n    pin_verified = count( event_type == \"CARD_PIN_VERIFIED\" ),\n    pin_failed   = count( event_type == \"CARD_PIN_FAILED\" ),\n    pin_blocked  = count( event_type == \"CARD_PIN_BLOCKED\" )\n  by host\n| filter host = *\n| sort - pin_failed, - pin_blocked\n| limit 20",
+      "layout": {
+        "w": 30,
+        "h": 14,
+        "x": 0,
+        "y": 76
+      }
+    },
+    {
+      "title": "QES signatures + decryptions per host",
+      "graphStyle": "table",
+      "query": "| filter( class_uid == 3002 )\n| parse '\"hostname\": \"$host{regex=[^\"]+}$\"' from message\n| parse '\"event_type\": \"$event_type{regex=[^\"]+}$\"' from message\n| group\n    signatures   = count( event_type == \"CARD_SIGNATURE_CREATED\" ),\n    decryptions  = count( event_type == \"CARD_DECRYPTION_SUCCESS\" ),\n    auth_success = count( event_type == \"CARD_AUTHENTICATION_SUCCESS\" ),\n    auth_failed  = count( event_type == \"CARD_AUTHENTICATION_FAILED\" )\n  by host\n| filter host = *\n| sort - signatures\n| limit 20",
+      "layout": {
+        "w": 30,
+        "h": 14,
+        "x": 30,
+        "y": 76
+      }
+    },
+    {
+      "title": "Account lockouts by hospital",
+      "graphStyle": "table",
+      "query": "| filter( class_uid == 3002 )\n| parse '\"hospital_id\": \"$hospital{regex=[^\"]+}$\"' from message\n| parse '\"event_type\": \"$event_type{regex=[^\"]+}$\"' from message\n| group\n    locked    = count( event_type == \"ACCOUNT_LOCKED\" ),\n    unlocked  = count( event_type == \"ACCOUNT_UNLOCKED\" ),\n    pwd_reset = count( event_type == \"PASSWORD_RESET_REQUEST\" )\n  by hospital\n| filter hospital = *\n| sort - locked",
+      "layout": {
+        "w": 30,
+        "h": 14,
+        "x": 0,
+        "y": 90
+      }
+    },
+    {
+      "title": "High/Critical severity events per host",
+      "graphStyle": "table",
+      "query": "| filter( class_uid == 3002 or class_uid == 4001 )\n| parse '\"hostname\": \"$host{regex=[^\"]+}$\"' from message\n| parse '\"severity\": \"$severity{regex=[^\"]+}$\"' from message\n| group high_sev = count( severity == \"HIGH\" or severity == \"CRITICAL\" ) by host\n| filter host = *\n| sort - high_sev\n| limit 20",
+      "layout": {
+        "w": 30,
+        "h": 14,
+        "x": 30,
+        "y": 90
+      }
+    }
+  ]
+}

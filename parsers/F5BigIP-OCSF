@@ -1,0 +1,86 @@
+{
+  // F5 BIG-IP LTM iRule + ASM parser — OCSF v1.3.0
+  attributes: {
+    "metadata.version":             "1.3.0",
+    "metadata.product.vendor_name": "F5",
+    "metadata.product.name":        "BIG-IP LTM",
+    "metadata.log_provider":        "syslog",
+    "Category":               "network",
+    "dataSource.vendor":      "F5",
+    "dataSource.name":        "BIG-IP LTM",
+    "dataSource.category":    "load-balancer",
+    "category_uid":           4,
+    "category_name":          "Network Activity",
+    "class_uid":              4002,
+    "class_name":             "HTTP Activity",
+    "activity_id":            1,
+    "type_uid":               400201,
+    "status_id":              1,
+    "severity_id":            1
+  },
+
+  patterns: {
+    ipv4: "\\d+\\.\\d+\\.\\d+\\.\\d+",
+    word: "\\S+",
+    untilSpace: "[^ ]+",
+    untilC:     "[^\\n]*?",
+    rest: ".*"
+  },
+
+  formats: [
+    // BLOCKED iRule WAF event → Detection Finding (CRITICAL)
+    {
+      id: "f5_blocked",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, category_name: "Findings",
+        type_uid: 200401,
+        finding_title: "F5 BIG-IP WAF Block",
+        severity_id: 5, severity: "Critical",
+        disposition_id: 2, disposition: "Blocked"
+      },
+      format: ".*BLOCKED.*Client $src_ip=ipv4$:$src_port=word$.*",
+      halt: true
+    },
+
+    // SSL handshake failed → Detection Finding (MEDIUM)
+    {
+      id: "f5_ssl_fail",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, category_name: "Findings",
+        type_uid: 200401,
+        finding_title: "F5 SSL Handshake Failure",
+        severity_id: 3, severity: "Medium"
+      },
+      format: ".*SSL Handshake failed for TCP $src_ip=ipv4$:$src_port=word$.*",
+      halt: true
+    },
+
+    // ASM violation (key=value style)
+    {
+      id: "f5_asm_violation",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, category_name: "Findings",
+        type_uid: 200401,
+        finding_title: "F5 ASM Web Application Attack",
+        severity_id: 5, severity: "Critical",
+        disposition_id: 2, disposition: "Blocked"
+      },
+      format: ".*ASM:.*ip_client=\"$src_ip=ipv4$\".*",
+      halt: true
+    },
+
+    // Standard HTTP request (informational)
+    {
+      id: "f5_http",
+      attributes: {
+        class_uid: 4002, class_name: "HTTP Activity",
+        type_uid: 400201
+      },
+      format: ".*Client $src_ip=ipv4$:$src_port=word$ -> VIP $vip_ip=ipv4$:$vip_port=word$.*",
+      halt: true
+    }
+  ]
+}

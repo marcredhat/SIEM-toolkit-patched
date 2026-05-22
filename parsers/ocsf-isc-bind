@@ -1,0 +1,259 @@
+// SentinelOne AI SIEM Parser: ISC BIND DNS Server
+// OCSF Schema Version: 1.1.0
+// Maps ISC BIND query/security logs to OCSF classes
+// Primary Class: DNS Activity (4003)
+
+{
+  "parserName": "ISCBIND-OCSF",
+  "version": "1.0.0",
+  "vendor": "ISC",
+  "product": "BIND",
+  "format": "syslog",
+  
+  "patterns": [
+    // Query logs
+    {
+      "pattern": "queries:\\s+info:\\s+client\\s+@(\\S+)\\s+([\\d.]+)#(\\d+)\\s+\\(([^)]+)\\):\\s+query:\\s+(\\S+)\\s+IN\\s+(\\w+)",
+      "rewrites": [
+        {"set": "class_uid", "value": "4003"},
+        {"set": "class_name", "value": "DNS Activity"},
+        {"set": "category_uid", "value": "4"},
+        {"set": "category_name", "value": "Network Activity"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Query"},
+        {"set": "type_uid", "value": "400301"},
+        
+        // Metadata
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "ISC BIND"},
+        {"set": "metadata.product.vendor_name", "value": "ISC"},
+        {"group": 1, "to": "metadata.uid"},
+        
+        // Time (from syslog header)
+        {"regex": "^(\\d+-\\w+-\\d+\\s+[\\d:.]+)", "group": 1, "to": "time"},
+        
+        // Client
+        {"group": 2, "to": "src_endpoint.ip"},
+        {"group": 3, "to": "src_endpoint.port"},
+        
+        // Query info
+        {"group": 4, "to": "query_info.opcode"},
+        {"group": 5, "to": "query_info.hostname"},
+        {"group": 6, "to": "query_info.type"},
+        
+        // DNS server
+        {"regex": "\\(([\\d.]+)\\)$", "group": 1, "to": "dst_endpoint.ip"},
+        
+        // Observables
+        {"array": "observables", "append": {"type": "IP Address", "type_id": 2, "value": "$2"}},
+        {"array": "observables", "append": {"type": "Hostname", "type_id": 1, "value": "$5"}},
+        
+        // Status
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    },
+    
+    // Security - Zone transfer denied
+    {
+      "pattern": "security:\\s+warning:\\s+client\\s+@(\\S+)\\s+([\\d.]+)#(\\d+)\\s+\\(([^)]+)\\):\\s+zone transfer\\s+'([^']+)'\\s+denied",
+      "rewrites": [
+        {"set": "class_uid", "value": "2001"},
+        {"set": "class_name", "value": "Security Finding"},
+        {"set": "category_uid", "value": "2"},
+        {"set": "category_name", "value": "Findings"},
+        {"set": "finding_info.types", "value": ["DNS Zone Transfer Attempt"]},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "ISC BIND"},
+        {"set": "metadata.product.vendor_name", "value": "ISC"},
+        
+        // Time
+        {"regex": "^(\\d+-\\w+-\\d+\\s+[\\d:.]+)", "group": 1, "to": "time"},
+        
+        // Client
+        {"group": 2, "to": "src_endpoint.ip"},
+        {"group": 3, "to": "src_endpoint.port"},
+        
+        // Zone
+        {"group": 5, "to": "finding_info.title"},
+        {"set": "finding_info.desc", "value": "Unauthorized zone transfer attempt"},
+        
+        // Severity
+        {"set": "severity_id", "value": "4"},
+        {"set": "severity", "value": "High"},
+        
+        // Status
+        {"set": "status_id", "value": "2"},
+        {"set": "status", "value": "Failure"},
+        {"set": "activity_id", "value": "2"},
+        {"set": "activity_name", "value": "Deny"}
+      ]
+    },
+    
+    // Security - Query denied
+    {
+      "pattern": "security:\\s+error:\\s+client\\s+@(\\S+)\\s+([\\d.]+)#(\\d+)\\s+\\(([^)]+)\\):\\s+query\\s+\\(cache\\)\\s+'([^']+)'\\s+denied",
+      "rewrites": [
+        {"set": "class_uid", "value": "4003"},
+        {"set": "class_name", "value": "DNS Activity"},
+        {"set": "activity_id", "value": "2"},
+        {"set": "activity_name", "value": "Query Denied"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "ISC BIND"},
+        {"set": "metadata.product.vendor_name", "value": "ISC"},
+        
+        // Time
+        {"regex": "^(\\d+-\\w+-\\d+\\s+[\\d:.]+)", "group": 1, "to": "time"},
+        
+        // Client
+        {"group": 2, "to": "src_endpoint.ip"},
+        {"group": 3, "to": "src_endpoint.port"},
+        
+        // Query
+        {"group": 5, "to": "query_info.hostname"},
+        
+        // Status
+        {"set": "status_id", "value": "2"},
+        {"set": "status", "value": "Failure"},
+        {"set": "rcode", "value": "REFUSED"},
+        
+        // Severity
+        {"set": "severity_id", "value": "3"},
+        {"set": "severity", "value": "Medium"}
+      ]
+    },
+    
+    // Zone transfer (AXFR) - successful
+    {
+      "pattern": "xfer-out:\\s+info:\\s+client\\s+@(\\S+)\\s+([\\d.]+)#(\\d+)\\s+\\(([^)]+)\\):\\s+transfer of\\s+'([^']+)':\\s+AXFR\\s+(started|ended)",
+      "rewrites": [
+        {"set": "class_uid", "value": "4003"},
+        {"set": "class_name", "value": "DNS Activity"},
+        
+        {"group": 6, "to": "transfer_status"},
+        {"lookup": "transfer_status", "map": {"started": 3, "ended": 4}, "to": "activity_id"},
+        {"lookup": "transfer_status", "map": {"started": "Zone Transfer Start", "ended": "Zone Transfer Complete"}, "to": "activity_name"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "ISC BIND"},
+        {"set": "metadata.product.vendor_name", "value": "ISC"},
+        
+        // Time
+        {"regex": "^(\\d+-\\w+-\\d+\\s+[\\d:.]+)", "group": 1, "to": "time"},
+        
+        // Client (secondary DNS)
+        {"group": 2, "to": "dst_endpoint.ip"},
+        {"group": 3, "to": "dst_endpoint.port"},
+        
+        // Zone
+        {"group": 5, "to": "query_info.hostname"},
+        {"set": "query_info.type", "value": "AXFR"},
+        
+        // Status
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    },
+    
+    // Dynamic update
+    {
+      "pattern": "update:\\s+info:\\s+client\\s+@(\\S+)\\s+([\\d.]+)#(\\d+)\\s+\\(([^)]+)\\):\\s+updating zone\\s+'([^']+)':\\s+(adding|deleting)\\s+an RR at\\s+'([^']+)'\\s+(\\w+)\\s+(\\S+)",
+      "rewrites": [
+        {"set": "class_uid", "value": "4003"},
+        {"set": "class_name", "value": "DNS Activity"},
+        
+        {"group": 6, "to": "update_action"},
+        {"lookup": "update_action", "map": {"adding": 5, "deleting": 6}, "to": "activity_id"},
+        {"lookup": "update_action", "map": {"adding": "Record Add", "deleting": "Record Delete"}, "to": "activity_name"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "ISC BIND"},
+        {"set": "metadata.product.vendor_name", "value": "ISC"},
+        
+        // Time
+        {"regex": "^(\\d+-\\w+-\\d+\\s+[\\d:.]+)", "group": 1, "to": "time"},
+        
+        // Client
+        {"group": 2, "to": "src_endpoint.ip"},
+        {"group": 3, "to": "src_endpoint.port"},
+        
+        // Zone and record
+        {"group": 5, "to": "query_info.zone"},
+        {"group": 7, "to": "query_info.hostname"},
+        {"group": 8, "to": "query_info.type"},
+        {"group": 9, "to": "answers.rdata"},
+        
+        // Status
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    },
+    
+    // Rate limiting
+    {
+      "pattern": "rate-limit:\\s+info:\\s+client\\s+@(\\S+)\\s+([\\d.]+)#(\\d+):\\s+rate limit\\s+(\\w+)\\s+(\\w+)\\s+response",
+      "rewrites": [
+        {"set": "class_uid", "value": "2001"},
+        {"set": "class_name", "value": "Security Finding"},
+        {"set": "finding_info.types", "value": ["DNS Rate Limiting"]},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "ISC BIND"},
+        {"set": "metadata.product.vendor_name", "value": "ISC"},
+        
+        // Time
+        {"regex": "^(\\d+-\\w+-\\d+\\s+[\\d:.]+)", "group": 1, "to": "time"},
+        
+        // Client
+        {"group": 2, "to": "src_endpoint.ip"},
+        {"group": 3, "to": "src_endpoint.port"},
+        
+        // Rate limit action
+        {"group": 4, "to": "activity_name"},
+        {"group": 5, "to": "finding_info.title"},
+        
+        // Severity
+        {"set": "severity_id", "value": "3"},
+        {"set": "severity", "value": "Medium"}
+      ]
+    },
+    
+    // DNSSEC events
+    {
+      "pattern": "dnssec:\\s+info:\\s+zone\\s+(\\S+):\\s+DNSKEY\\s+(\\d+)/(\\w+)\\s+\\((\\w+)\\)\\s+is now\\s+(\\w+)",
+      "rewrites": [
+        {"set": "class_uid", "value": "4003"},
+        {"set": "class_name", "value": "DNS Activity"},
+        {"set": "activity_id", "value": "7"},
+        {"set": "activity_name", "value": "DNSSEC Key Event"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "ISC BIND"},
+        {"set": "metadata.product.vendor_name", "value": "ISC"},
+        
+        // Time
+        {"regex": "^(\\d+-\\w+-\\d+\\s+[\\d:.]+)", "group": 1, "to": "time"},
+        
+        // Zone
+        {"group": 1, "to": "query_info.zone"},
+        
+        // Key info
+        {"group": 2, "to": "dnssec.key_tag"},
+        {"group": 3, "to": "dnssec.algorithm"},
+        {"group": 4, "to": "dnssec.key_type"},
+        {"group": 5, "to": "dnssec.key_state"},
+        
+        // Status
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    }
+  ],
+  
+  "query_type_mappings": {
+    "A": 1, "AAAA": 28, "MX": 15, "TXT": 16, "CNAME": 5,
+    "NS": 2, "SOA": 6, "PTR": 12, "SRV": 33, "AXFR": 252, "ANY": 255
+  }
+}
