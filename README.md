@@ -59,6 +59,10 @@ S1_API_TOKEN=...                             # Service user API token (account s
 SDL_XDR_URL=    #  XDR endpoint
 SDL_LOG_READ_KEY=                    # Data Lake read key
 ANTHROPIC_API_KEY=                              # Optional — not currently used
+# SDL Configuration Read key — used by /api/quality/sync-from-sdl to
+# download parser files from /logParsers/ on the SDL tenant.
+# Generate in S1 console: Settings -> Integrations -> Data Lake API Keys (Configuration Read scope).
+SDL_CONFIG_READ_KEY=
 ```
 
 **S1_API_TOKEN** — generate at *Settings → Users → Service Users* in the console. 
