@@ -1,0 +1,136 @@
+{
+  attributes: {
+    // Required pipeline defaults
+    "metadata.version":    "1.1.0",
+    "dataSource.vendor":   "MikroTik",
+    "dataSource.name":     "MikroTik RouterOS",
+    "dataSource.category": "network",
+    // Product metadata
+    "metadata.product.vendor_name": "MikroTik",
+    "metadata.product.name":        "RouterOS",
+    "metadata.log_provider":        "syslog"
+  },
+
+  patterns: {
+    ipv4:   "\\d+\\.\\d+\\.\\d+\\.\\d+",
+    mac:    "[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}",
+    number: "\\d+",
+    word:   "\\w+",
+    iface:  "[\\w.-]+"
+  },
+
+  formats: [
+    // ─────────────────────────────────────────────────────────────────────────
+    // FIREWALL (Network Activity 4001)
+    // ─────────────────────────────────────────────────────────────────────────
+    {
+      // forward in:ether1 out:ether2, src-mac 00:11:22:33:44:55, proto TCP, 192.168.1.10:54321->8.8.8.8:443, len 64
+      id: "firewall_full",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 6, activity_name: "Traffic"
+      },
+      format:
+        "$disposition=word$ in:$src_endpoint.interface_name=iface$ out:$dst_endpoint.interface_name=iface$, " +
+        "src-mac $src_endpoint.mac=mac$, proto $connection_info.protocol_name=word$, " +
+        "$src_endpoint.ip=ipv4$:$src_endpoint.port=number$->$dst_endpoint.ip=ipv4$:$dst_endpoint.port=number$, len $traffic.bytes=number$",
+      halt: true
+    },
+    {
+      // forward: in:ether1 out:ether2, src-address 192.168.1.10, dst-address 8.8.8.8
+      id: "firewall_simple",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 6, activity_name: "Traffic"
+      },
+      format:
+        "$disposition=word$: in:$src_endpoint.interface_name=iface$ out:$dst_endpoint.interface_name=iface$, " +
+        "src-address $src_endpoint.ip=ipv4$, dst-address $dst_endpoint.ip=ipv4$",
+      halt: true
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // DHCP (DHCP Activity 4004)
+    // ─────────────────────────────────────────────────────────────────────────
+    {
+      // dhcp,info leased 192.168.1.100 for 00:11:22:33:44:55
+      id: "dhcp_lease",
+      attributes: {
+        class_uid: 4004, class_name: "DHCP Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 1, activity_name: "Lease"
+      },
+      format: "$dhcp.action=word$ $dst_endpoint.ip=ipv4$ for $dst_endpoint.mac=mac$",
+      halt: true
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // WIRELESS (Network Activity 4001)
+    // ─────────────────────────────────────────────────────────────────────────
+    {
+      // connected, 00:11:22:33:44:55@wlan1, signal-strength=-65
+      id: "wireless",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 1, activity_name: "Open"
+      },
+      format: "$status=word$, $src_endpoint.mac=mac$@$src_endpoint.interface_name=iface$, signal-strength=$unmapped.wireless_signal$",
+      halt: true
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // AUTHENTICATION (Authentication 3002)
+    // ─────────────────────────────────────────────────────────────────────────
+    {
+      // user admin logged in from 192.168.1.5 via winbox
+      id: "login",
+      attributes: {
+        class_uid: 3002, class_name: "Authentication",
+        category_uid: 3, category_name: "Identity & Access Management",
+        activity_id: 1, activity_name: "Logon"
+      },
+      format: "user $actor.user.name=word$ $status$ from $src_endpoint.ip=ipv4$ via $auth_protocol=word$",
+      halt: true
+    },
+    {
+      // <ppp-user1> connected from 203.0.113.50
+      id: "vpn_connect",
+      attributes: {
+        class_uid: 3002, class_name: "Authentication",
+        category_uid: 3, category_name: "Identity & Access Management",
+        activity_id: 1, activity_name: "Logon",
+        auth_protocol: "PPP"
+      },
+      format: "<$actor.user.name$> $status=word$ from $src_endpoint.ip=ipv4$",
+      halt: true
+    },
+    {
+      // <ppp-user1> disconnected, uptime 1h30m, bytes-in=12345, bytes-out=67890
+      id: "vpn_disconnect",
+      attributes: {
+        class_uid: 3002, class_name: "Authentication",
+        category_uid: 3, category_name: "Identity & Access Management",
+        activity_id: 2, activity_name: "Logoff",
+        auth_protocol: "PPP"
+      },
+      format: "<$actor.user.name$> disconnected, uptime $session.duration$, bytes-in=$traffic.bytes_in=number$, bytes-out=$traffic.bytes_out=number$",
+      halt: true
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // GENERIC FALLBACK
+    // ─────────────────────────────────────────────────────────────────────────
+    {
+      id: "generic",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 0, activity_name: "Unknown"
+      },
+      format: "$unmapped.facility=word$,$unmapped.topic=word$: $unmapped.body$"
+    }
+  ]
+}

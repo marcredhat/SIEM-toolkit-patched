@@ -1,0 +1,48 @@
+{
+  // Microsoft DNS debug log parser — OCSF v1.3.0
+  attributes: {
+    "metadata.version":             "1.3.0",
+    "metadata.product.vendor_name": "Microsoft",
+    "metadata.product.name":        "DNS Server",
+    "Category":               "network",
+    "dataSource.vendor":      "Microsoft",
+    "dataSource.name":        "DNS Server",
+    "dataSource.category":    "dns",
+    "category_uid":           4,
+    "category_name":          "Network Activity",
+    "class_uid":              4003,
+    "class_name":             "DNS Activity",
+    "activity_id":            1,
+    "type_uid":               400301,
+    "status_id":              1,
+    "severity_id":            1
+  },
+
+  patterns: {
+    ipv4: "\\d+\\.\\d+\\.\\d+\\.\\d+",
+    word: "\\S+",
+    rest: ".*"
+  },
+
+  formats: [
+    {
+      id: "msdns_query",
+      attributes: {
+        class_uid: 4003, class_name: "DNS Activity",
+        type_uid: 400301
+      },
+      format: ".* $proto=word$ $direction=word$ $src_ip=ipv4$ .* Q .* $query_type=word$ .* $query_name=rest$",
+      halt: true,
+      rewrites: [
+        // DNS tunneling (very long query)
+        { input: "query_name", output: "class_uid",     match: "^.{120,}$", replace: "2004" },
+        { input: "query_name", output: "class_name",    match: "^.{120,}$", replace: "Detection Finding" },
+        { input: "query_name", output: "category_uid",  match: "^.{120,}$", replace: "2" },
+        { input: "query_name", output: "type_uid",      match: "^.{120,}$", replace: "200401" },
+        { input: "query_name", output: "finding_title", match: "^.{120,}$", replace: "MS-DNS Suspected Tunneling (long query)" },
+        { input: "query_name", output: "severity_id",   match: "^.{120,}$", replace: "4" },
+        { input: "query_name", output: "severity",      match: "^.{120,}$", replace: "High" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,96 @@
+// SentinelOne AI SIEM Parser: IBM QRadar
+// OCSF Schema Version: 1.1.0
+// Maps QRadar LEEF/JSON events to OCSF classes
+// Primary Classes: Security Finding (2001), Authentication (3002), Network Activity (4001)
+
+{
+  "parserName": "QRadar-OCSF",
+  "version": "1.0.0",
+  "vendor": "IBM",
+  "product": "QRadar",
+  "format": "json",
+  
+  "patterns": [
+    {
+      "pattern": ".*",
+      "rewrites": [
+        // OCSF Metadata
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "QRadar"},
+        {"set": "metadata.product.vendor_name", "value": "IBM"},
+        {"copy": "logSourceName", "to": "metadata.log_name"},
+        {"copy": "logSourceTypeName", "to": "metadata.product.feature.name"},
+        
+        // OCSF Classification
+        {"set": "class_uid", "value": "2001"},  // Security Finding
+        {"set": "class_name", "value": "Security Finding"},
+        {"copy": "category", "to": "category_name"},
+        {"set": "type_uid", "value": "200101"},  // Security Finding: Create
+        
+        // Time mapping
+        {"copy": "startTime", "to": "time"},
+        {"parseTimestamp": "startTime", "format": "ISO8601", "to": "time_dt"},
+        
+        // Severity mapping (QRadar 1-10 to OCSF 0-6)
+        {"copy": "severity", "to": "severity_id", "transform": "qradarSeverityToOCSF"},
+        {"lookup": "severity_id", "map": {"1": "Informational", "2": "Low", "3": "Medium", "4": "High", "5": "Critical", "6": "Fatal"}, "to": "severity"},
+        
+        // Actor/User mapping
+        {"copy": "username", "to": "actor.user.name"},
+        {"copy": "domainName", "to": "actor.user.domain"},
+        {"copy": "identityHostName", "to": "actor.user.credential_uid"},
+        
+        // Source endpoint
+        {"copy": "sourceIP", "to": "src_endpoint.ip"},
+        {"copy": "sourcePort", "to": "src_endpoint.port"},
+        
+        // Destination endpoint  
+        {"copy": "destinationIP", "to": "dst_endpoint.ip"},
+        {"copy": "destinationPort", "to": "dst_endpoint.port"},
+        
+        // Network connection
+        {"copy": "protocol", "to": "connection_info.protocol_name"},
+        
+        // Finding details
+        {"copy": "qidName", "to": "finding_info.title"},
+        {"copy": "eventName", "to": "finding_info.desc"},
+        {"copy": "qid", "to": "finding_info.uid"},
+        {"copy": "payload", "to": "finding_info.data_sources"},
+        
+        // Risk scoring
+        {"copy": "magnitude", "to": "risk_score"},
+        {"copy": "credibility", "to": "confidence_score"},
+        {"copy": "relevance", "to": "impact_score"},
+        
+        // Observables
+        {"array": "observables", "append": {"type": "IP Address", "type_id": 2, "value": "$sourceIP"}},
+        {"array": "observables", "append": {"type": "IP Address", "type_id": 2, "value": "$destinationIP"}},
+        {"array": "observables", "append": {"type": "User Name", "type_id": 4, "value": "$username"}, "if": "username"}
+      ]
+    }
+  ],
+  
+  "transforms": {
+    "qradarSeverityToOCSF": {
+      "1-2": 1,
+      "3-4": 2,
+      "5-6": 3,
+      "7-8": 4,
+      "9-10": 5
+    }
+  },
+  
+  "ocsf_mappings": {
+    "authentication_events": {
+      "condition": "category == 'Authentication'",
+      "class_uid": 3002,
+      "class_name": "Authentication",
+      "activity_id": {"success": 1, "failure": 2}
+    },
+    "network_events": {
+      "condition": "protocol != ''",
+      "class_uid": 4001,
+      "class_name": "Network Activity"
+    }
+  }
+}

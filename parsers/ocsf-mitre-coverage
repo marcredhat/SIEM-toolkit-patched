@@ -1,0 +1,160 @@
+{
+  "duration": "24h",
+  "description": "MITRE ATT&CK technique coverage from OCSF detections",
+  "graphs": [
+    {
+      "title": "MITRE ATT&CK Coverage",
+      "graphStyle": "markdown",
+      "markdown": "## MITRE ATT&CK Technique Counters\nEach panel shows the count of events matching a specific MITRE technique pattern.\n\n| Technique | Description |\n|---|---|\n| T1110 | Brute Force |\n| T1046 | Network Service Scanning |\n| T1059 | Command and Scripting Interpreter |\n| T1078 | Valid Accounts |\n| T1098 | Account Manipulation |\n| T1548 | Abuse Elevation Control Mechanism |",
+      "layout": {
+        "w": 60,
+        "h": 10,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "title": "T1110 - Brute Force",
+      "graphStyle": "number",
+      "query": "message contains 'Failed password' or message contains 'authentication failure' | group count() | limit 1",
+      "layout": {
+        "w": 15,
+        "h": 7,
+        "x": 0,
+        "y": 10
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0"
+      }
+    },
+    {
+      "title": "T1046 - Network Scanning",
+      "graphStyle": "number",
+      "query": "action = 'deny' | group count() | limit 1",
+      "layout": {
+        "w": 15,
+        "h": 7,
+        "x": 15,
+        "y": 10
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0"
+      }
+    },
+    {
+      "title": "T1059 - Command Execution",
+      "graphStyle": "number",
+      "query": "message contains 'bash -c' or message contains 'python -c' or message contains 'powershell -enc' or message contains 'cmd.exe /c' | group count() | limit 1",
+      "layout": {
+        "w": 15,
+        "h": 7,
+        "x": 30,
+        "y": 10
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0"
+      }
+    },
+    {
+      "title": "T1078 - Valid Accounts",
+      "graphStyle": "number",
+      "query": "user_name = 'root' or user_name = 'Administrator' or user_name = 'admin' or user_name = 'SYSTEM' | group count() | limit 1",
+      "layout": {
+        "w": 15,
+        "h": 7,
+        "x": 45,
+        "y": 10
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0"
+      }
+    },
+    {
+      "title": "T1098 - Account Manipulation",
+      "graphStyle": "number",
+      "query": "message contains 'useradd' or message contains 'usermod' or message contains 'GRANT' or message contains 'Add member' | group count() | limit 1",
+      "layout": {
+        "w": 15,
+        "h": 7,
+        "x": 0,
+        "y": 17
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0"
+      }
+    },
+    {
+      "title": "T1548 - Privilege Escalation",
+      "graphStyle": "number",
+      "query": "message contains 'sudo' or message contains 'NOT in sudoers' | group count() | limit 1",
+      "layout": {
+        "w": 15,
+        "h": 7,
+        "x": 15,
+        "y": 17
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0"
+      }
+    },
+    {
+      "title": "T1021 - Remote Services",
+      "graphStyle": "number",
+      "query": "(dstport = 22 or dstport = 3389 or dstport = 5985) action = 'allow' | group count() | limit 1",
+      "layout": {
+        "w": 15,
+        "h": 7,
+        "x": 30,
+        "y": 17
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0"
+      }
+    },
+    {
+      "title": "T1136 - Create Account",
+      "graphStyle": "number",
+      "query": "message contains 'useradd' or message contains 'new user' or message contains 'CREATE USER' | group count() | limit 1",
+      "layout": {
+        "w": 15,
+        "h": 7,
+        "x": 45,
+        "y": 17
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0"
+      }
+    },
+    {
+      "title": "Detections Over Time",
+      "graphStyle": "stacked_bar",
+      "xAxis": "time",
+      "query": "serverHost contains 'ocsf' | group count() by timestamp=timebucket('1h'), serverHost | transpose serverHost on timestamp",
+      "layout": {
+        "w": 40,
+        "h": 14,
+        "x": 0,
+        "y": 24
+      }
+    },
+    {
+      "title": "Top Attacker IPs",
+      "graphStyle": "table",
+      "query": "src_ip = * (message contains 'Failed' or message contains 'deny' or action = 'deny') | group hits=count() by src_ip | sort -hits | limit 10",
+      "layout": {
+        "w": 20,
+        "h": 14,
+        "x": 40,
+        "y": 24
+      }
+    }
+  ]
+}

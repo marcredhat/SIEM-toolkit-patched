@@ -6,10 +6,7 @@ node_modules/
 .next/
 frontend/out/
 pgdata/
-parsers/*.json
 data/
 
-# Tenant-synced parsers (downloaded via /api/quality/sync-from-sdl) -
-# do not commit; each tenant generates its own set
-parsers/*
-!parsers/.gitkeep
+# Parsers ARE committed in this fork (snapshot of the demo tenant).
+# .env still excluded for safety.

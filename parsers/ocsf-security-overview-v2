@@ -1,0 +1,221 @@
+{
+  "duration": "24h",
+  "description": "Cross-source security posture from OCSF-normalized events",
+  "parameters": [
+    {
+      "name": "source",
+      "values": [
+        {
+          "label": "All Sources",
+          "value": "*"
+        },
+        {
+          "label": "Linux",
+          "value": "linux-ocsf"
+        },
+        {
+          "label": "FortiGate",
+          "value": "fortigate-ocsf"
+        },
+        {
+          "label": "CheckPoint",
+          "value": "checkpoint-ocsf"
+        },
+        {
+          "label": "Palo Alto",
+          "value": "paloalto-ocsf"
+        },
+        {
+          "label": "Windows",
+          "value": "windows-ocsf"
+        }
+      ],
+      "defaultValue": "*"
+    }
+  ],
+  "graphs": [
+    {
+      "title": "Dashboard Overview",
+      "graphStyle": "markdown",
+      "markdown": "## OCSF Security Overview\\n\\nCross-source security posture from **OCSF v1.3.0** normalized events.\\n\\n| Metric | Description |\\n|--------|-------------|\\n| **Sources** | All serverHost containing 'ocsf' |\\n| **Time Range** | Last 24 hours |\\n| **Refresh** | Auto (5 min) |\\n\\nUse the **source** dropdown above to filter by specific data source.",
+      "layout": {
+        "w": 60,
+        "h": 8,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "title": "Event Count by OCSF Source",
+      "graphStyle": "donut",
+      "maxPieSlices": 12,
+      "dataLabelType": "PERCENTAGE",
+      "query": "serverHost contains 'ocsf' | group count() by serverHost | sort -count | limit 12",
+      "layout": {
+        "w": 20,
+        "h": 14,
+        "x": 0,
+        "y": 8
+      }
+    },
+    {
+      "title": "Event Volume Over Time (24h)",
+      "graphStyle": "stacked_bar",
+      "xAxis": "time",
+      "query": "serverHost contains 'ocsf' | group count() by timestamp=timebucket('1h'), serverHost | transpose serverHost on timestamp",
+      "layout": {
+        "w": 40,
+        "h": 14,
+        "x": 20,
+        "y": 8
+      }
+    },
+    {
+      "title": "Unique Source IPs",
+      "graphStyle": "number",
+      "query": "src_ip = * serverHost contains 'ocsf' | group estimate_distinct(src_ip) | limit 1",
+      "layout": {
+        "w": 12,
+        "h": 7,
+        "x": 0,
+        "y": 22
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0",
+        "suffix": " IPs"
+      }
+    },
+    {
+      "title": "Unique Users",
+      "graphStyle": "number",
+      "query": "user_name = * serverHost contains 'ocsf' | group estimate_distinct(user_name) | limit 1",
+      "layout": {
+        "w": 12,
+        "h": 7,
+        "x": 12,
+        "y": 22
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0",
+        "suffix": " users"
+      }
+    },
+    {
+      "title": "Unique Destinations",
+      "graphStyle": "number",
+      "query": "dst_ip = * serverHost contains 'ocsf' | group estimate_distinct(dst_ip) | limit 1",
+      "layout": {
+        "w": 12,
+        "h": 7,
+        "x": 24,
+        "y": 22
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0",
+        "suffix": " IPs"
+      }
+    },
+    {
+      "title": "Total Events",
+      "graphStyle": "number",
+      "query": "serverHost contains 'ocsf' | group count() | limit 1",
+      "layout": {
+        "w": 12,
+        "h": 7,
+        "x": 36,
+        "y": 22
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0"
+      }
+    },
+    {
+      "title": "Auth Failure Events (24h)",
+      "graphStyle": "number",
+      "query": "serverHost contains 'ocsf' (message contains 'Failed password' or message contains 'authentication failure' or status = 'failure') | group count() | limit 1",
+      "layout": {
+        "w": 12,
+        "h": 7,
+        "x": 48,
+        "y": 22
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0",
+        "suffix": " failures"
+      }
+    },
+    {
+      "title": "Top Source IPs (24h)",
+      "graphStyle": "table",
+      "query": "src_ip = * serverHost contains 'ocsf' | group hits=count() by src_ip | sort -hits | limit 15",
+      "layout": {
+        "w": 20,
+        "h": 14,
+        "x": 0,
+        "y": 29
+      }
+    },
+    {
+      "title": "Top Active Users (24h)",
+      "graphStyle": "table",
+      "query": "user_name = * serverHost contains 'ocsf' | group hits=count() by user_name | sort -hits | limit 15",
+      "layout": {
+        "w": 20,
+        "h": 14,
+        "x": 20,
+        "y": 29
+      }
+    },
+    {
+      "title": "External Connections (non-RFC1918)",
+      "graphStyle": "table",
+      "query": "dst_ip = * serverHost contains 'ocsf' | let is_external = not net_rfc1918(dst_ip) | filter is_external = true | group hits=count() by dst_ip | sort -hits | limit 15",
+      "layout": {
+        "w": 20,
+        "h": 14,
+        "x": 40,
+        "y": 29
+      }
+    },
+    {
+      "title": "Events by Severity",
+      "graphStyle": "donut",
+      "maxPieSlices": 5,
+      "query": "severity_id = * serverHost contains 'ocsf' | group count() by severity_id | sort -count | limit 5",
+      "layout": {
+        "w": 15,
+        "h": 12,
+        "x": 0,
+        "y": 43
+      }
+    },
+    {
+      "title": "Events by Action",
+      "graphStyle": "donut",
+      "maxPieSlices": 6,
+      "query": "action = * serverHost contains 'ocsf' | group count() by action | sort -count | limit 6",
+      "layout": {
+        "w": 15,
+        "h": 12,
+        "x": 15,
+        "y": 43
+      }
+    },
+    {
+      "title": "Firewall Blocks (24h)",
+      "graphStyle": "table",
+      "query": "serverHost contains 'ocsf' (action = 'deny' or action = 'block' or action = 'drop') | group hits=count() by serverHost, src_ip, dst_ip | sort -hits | limit 20",
+      "layout": {
+        "w": 30,
+        "h": 12,
+        "x": 30,
+        "y": 43
+      }
+    }
+  ]
+}

@@ -1,0 +1,223 @@
+// SentinelOne AI SIEM Parser: AMS - F5 Network Big IP
+// OCSF Schema Version: 1.1.0
+// Maps F5 BIG-IP LTM/ASM/APM logs to OCSF classes
+// Primary Classes: HTTP Activity (4002), Security Finding (2001), Network Activity (4001)
+
+{
+  "parserName": "F5BigIP-OCSF",
+  "version": "1.0.0",
+  "vendor": "F5 Networks",
+  "product": "BIG-IP",
+  "format": "syslog",
+  
+  "patterns": [
+    // iRule HTTP Request logs
+    {
+      "pattern": "Rule\\s+(/\\S+)\\s+<HTTP_REQUEST>:",
+      "rewrites": [
+        {"set": "class_uid", "value": "4002"},
+        {"set": "class_name", "value": "HTTP Activity"},
+        {"set": "category_uid", "value": "4"},
+        {"set": "category_name", "value": "Network Activity"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Request"},
+        
+        // Metadata
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "F5 BIG-IP LTM"},
+        {"set": "metadata.product.vendor_name", "value": "F5 Networks"},
+        {"group": 1, "to": "policy.name"},
+        
+        // Client
+        {"regex": "Client\\s+([\\d.]+):(\\d+)", "group": 1, "to": "src_endpoint.ip"},
+        {"regex": "Client\\s+([\\d.]+):(\\d+)", "group": 2, "to": "src_endpoint.port"},
+        
+        // VIP
+        {"regex": "VIP\\s+([\\d.]+):(\\d+)", "group": 1, "to": "dst_endpoint.ip"},
+        {"regex": "VIP\\s+([\\d.]+):(\\d+)", "group": 2, "to": "dst_endpoint.port"},
+        
+        // Pool/Member
+        {"regex": "Pool\\s+(\\S+)", "group": 1, "to": "dst_endpoint.svc_name"},
+        {"regex": "Member\\s+([\\d.]+):(\\d+)", "group": 1, "to": "dst_endpoint.intermediate_ips"},
+        
+        // HTTP details
+        {"regex": "URI\\s+(\\S+)", "group": 1, "to": "http_request.url.path"},
+        {"regex": "Method\\s+(\\w+)", "group": 1, "to": "http_request.http_method"},
+        {"regex": "Host\\s+(\\S+)", "group": 1, "to": "http_request.url.hostname"},
+        {"regex": "User-Agent\\s+(.+?)(?:\\s+\\w+=|$)", "group": 1, "to": "http_request.user_agent"}
+      ]
+    },
+    
+    // iRule Security blocks
+    {
+      "pattern": "Rule\\s+(/\\S+)\\s+<HTTP_REQUEST>:\\s+BLOCKED",
+      "rewrites": [
+        {"set": "class_uid", "value": "2001"},
+        {"set": "class_name", "value": "Security Finding"},
+        {"set": "category_uid", "value": "2"},
+        {"set": "category_name", "value": "Findings"},
+        {"set": "activity_id", "value": "2"},
+        {"set": "activity_name", "value": "Block"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "F5 BIG-IP iRule"},
+        {"set": "metadata.product.vendor_name", "value": "F5 Networks"},
+        
+        // Extract attack info
+        {"regex": "BLOCKED\\s+-\\s+(.+?)\\s+Client", "group": 1, "to": "finding_info.title"},
+        {"regex": "Client\\s+([\\d.]+)", "group": 1, "to": "src_endpoint.ip"},
+        {"regex": "URI\\s+(\\S+)", "group": 1, "to": "finding_info.src_url"},
+        {"regex": "Pattern matched:\\s+(.+?)$", "group": 1, "to": "finding_info.desc"},
+        
+        {"set": "severity_id", "value": "4"},
+        {"set": "severity", "value": "High"}
+      ]
+    },
+    
+    // SSL Handshake failures
+    {
+      "pattern": "SSL Handshake failed",
+      "rewrites": [
+        {"set": "class_uid", "value": "4001"},
+        {"set": "class_name", "value": "Network Activity"},
+        {"set": "activity_id", "value": "6"},
+        {"set": "activity_name", "value": "Fail"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "F5 BIG-IP SSL"},
+        {"set": "metadata.product.vendor_name", "value": "F5 Networks"},
+        
+        {"regex": "TCP\\s+([\\d.]+):(\\d+)\\s+->\\s+([\\d.]+):(\\d+)", "group": 1, "to": "src_endpoint.ip"},
+        {"regex": "TCP\\s+([\\d.]+):(\\d+)\\s+->\\s+([\\d.]+):(\\d+)", "group": 2, "to": "src_endpoint.port"},
+        {"regex": "TCP\\s+([\\d.]+):(\\d+)\\s+->\\s+([\\d.]+):(\\d+)", "group": 3, "to": "dst_endpoint.ip"},
+        {"regex": "TCP\\s+([\\d.]+):(\\d+)\\s+->\\s+([\\d.]+):(\\d+)", "group": 4, "to": "dst_endpoint.port"},
+        
+        {"regex": "-\\s+(.+)$", "group": 1, "to": "status_detail"},
+        
+        {"set": "status_id", "value": "2"},
+        {"set": "status", "value": "Failure"},
+        {"set": "severity_id", "value": "3"},
+        {"set": "severity", "value": "Medium"}
+      ]
+    },
+    
+    // APM Session events
+    {
+      "pattern": "apmd\\[\\d+\\]:",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        {"set": "category_uid", "value": "3"},
+        {"set": "category_name", "value": "Identity & Access Management"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "F5 BIG-IP APM"},
+        {"set": "metadata.product.vendor_name", "value": "F5 Networks"},
+        
+        // Session
+        {"regex": ":Common:(\\w+):", "group": 1, "to": "session.uid"},
+        
+        // User
+        {"regex": "User:\\s+(\\S+)", "group": 1, "to": "user.name"},
+        
+        // Client IP
+        {"regex": "Client IP:\\s+([\\d.]+)", "group": 1, "to": "src_endpoint.ip"},
+        
+        // Activity based on message
+        {"set": "activity_id", "value": "1", "if": "Session created|session created"},
+        {"set": "activity_name", "value": "Logon", "if": "Session created|session created"},
+        {"set": "activity_id", "value": "2", "if": "Session terminated|terminated"},
+        {"set": "activity_name", "value": "Logoff", "if": "Session terminated|terminated"},
+        
+        // Status
+        {"set": "status_id", "value": "1", "if": "Allow|Success|success"},
+        {"set": "status", "value": "Success", "if": "Allow|Success|success"},
+        {"set": "status_id", "value": "2", "if": "Deny|failed|failure"},
+        {"set": "status", "value": "Failure", "if": "Deny|failed|failure"}
+      ]
+    },
+    
+    // ASM (WAF) logs
+    {
+      "pattern": "ASM:",
+      "rewrites": [
+        {"set": "class_uid", "value": "2001"},
+        {"set": "class_name", "value": "Security Finding"},
+        {"set": "category_uid", "value": "2"},
+        {"set": "category_name", "value": "Findings"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "F5 BIG-IP ASM"},
+        {"set": "metadata.product.vendor_name", "value": "F5 Networks"},
+        
+        // Parse ASM fields
+        {"regex": "unit_hostname=\"([^\"]+)\"", "group": 1, "to": "device.hostname"},
+        {"regex": "management_ip_address=\"([^\"]+)\"", "group": 1, "to": "device.ip"},
+        {"regex": "policy_name=\"([^\"]+)\"", "group": 1, "to": "policy.name"},
+        {"regex": "violations=\"([^\"]+)\"", "group": 1, "to": "finding_info.title"},
+        {"regex": "request_status=\"([^\"]+)\"", "group": 1, "to": "activity_name"},
+        {"regex": "response_code=\"([^\"]+)\"", "group": 1, "to": "http_response.code"},
+        {"regex": "ip_client=\"([^\"]+)\"", "group": 1, "to": "src_endpoint.ip"},
+        {"regex": "method=\"([^\"]+)\"", "group": 1, "to": "http_request.http_method"},
+        {"regex": "protocol=\"([^\"]+)\"", "group": 1, "to": "connection_info.protocol_name"},
+        {"regex": "uri=\"([^\"]+)\"", "group": 1, "to": "http_request.url.path"},
+        {"regex": "sig_ids=\"([^\"]+)\"", "group": 1, "to": "finding_info.uid"},
+        {"regex": "sig_names=\"([^\"]+)\"", "group": 1, "to": "finding_info.desc"},
+        {"regex": "severity=\"([^\"]+)\"", "group": 1, "to": "severity"},
+        {"regex": "attack_type=\"([^\"]+)\"", "group": 1, "to": "finding_info.types"},
+        
+        // Severity mapping
+        {"lookup": "severity", "map": {"Critical": 5, "High": 4, "Medium": 3, "Low": 2, "Informational": 1}, "to": "severity_id"},
+        
+        // Activity
+        {"lookup": "activity_name", "map": {"blocked": 2, "passed": 1, "alarmed": 1}, "to": "activity_id"}
+      ]
+    },
+    
+    // Pool member status
+    {
+      "pattern": "Pool\\s+(/\\S+)\\s+member\\s+([\\d.]+):(\\d+)\\s+monitor status\\s+(\\w+)",
+      "rewrites": [
+        {"set": "class_uid", "value": "4001"},
+        {"set": "class_name", "value": "Network Activity"},
+        {"set": "activity_id", "value": "99"},
+        {"set": "activity_name", "value": "Health Check"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "F5 BIG-IP LTM"},
+        {"set": "metadata.product.vendor_name", "value": "F5 Networks"},
+        
+        {"group": 1, "to": "dst_endpoint.svc_name"},
+        {"group": 2, "to": "dst_endpoint.ip"},
+        {"group": 3, "to": "dst_endpoint.port"},
+        {"group": 4, "to": "status"},
+        
+        {"lookup": "status", "map": {"up": 1, "down": 2}, "to": "status_id"}
+      ]
+    },
+    
+    // Audit logs
+    {
+      "pattern": "AUDIT\\s+-\\s+user\\s+(\\S+)",
+      "rewrites": [
+        {"set": "class_uid", "value": "6002"},
+        {"set": "class_name", "value": "API Activity"},
+        {"set": "category_uid", "value": "6"},
+        {"set": "category_name", "value": "Application Activity"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "F5 BIG-IP"},
+        {"set": "metadata.product.vendor_name", "value": "F5 Networks"},
+        
+        {"group": 1, "to": "actor.user.name"},
+        {"regex": "from host\\s+([\\d.]+)", "group": 1, "to": "src_endpoint.ip"},
+        {"regex": "modified object\\s+(\\S+)", "group": 1, "to": "resources.name"},
+        {"regex": "state from\\s+(\\w+)\\s+to\\s+(\\w+)", "group": 1, "to": "prev_state"},
+        {"regex": "state from\\s+(\\w+)\\s+to\\s+(\\w+)", "group": 2, "to": "state"},
+        
+        {"set": "activity_id", "value": "2"},
+        {"set": "activity_name", "value": "Update"}
+      ]
+    }
+  ]
+}

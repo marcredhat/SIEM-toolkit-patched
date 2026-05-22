@@ -1,0 +1,70 @@
+{
+  // WatchGuard Fireware syslog parser — OCSF v1.3.0
+  attributes: {
+    "metadata.version":             "1.3.0",
+    "metadata.product.vendor_name": "WatchGuard",
+    "metadata.product.name":        "Fireware",
+    "Category":               "network",
+    "dataSource.vendor":      "WatchGuard",
+    "dataSource.name":        "Fireware",
+    "dataSource.category":    "firewall",
+    "category_uid":           4,
+    "category_name":          "Network Activity",
+    "class_uid":              4001,
+    "class_name":             "Network Activity",
+    "activity_id":            6,
+    "type_uid":               400106,
+    "status_id":              1,
+    "status":                 "Success",
+    "severity_id":            1
+  },
+
+  patterns: {
+    ipv4: "\\d+\\.\\d+\\.\\d+\\.\\d+",
+    word: "\\S+",
+    rest: ".*"
+  },
+
+  formats: [
+    // Allowed traffic
+    {
+      id: "wg_allow",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        type_uid: 400106,
+        disposition_id: 1, disposition: "Allowed"
+      },
+      format: "$ts=rest$ firewall Allow $src_ip=ipv4$ $dst_ip=ipv4$ $service=word$ $src_port=word$ $dst_port=word$ .*",
+      halt: true
+    },
+
+    // Denied traffic → Detection Finding
+    {
+      id: "wg_deny",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, category_name: "Findings",
+        type_uid: 200401,
+        finding_title: "WatchGuard Firewall Deny",
+        severity_id: 3, severity: "Medium",
+        disposition_id: 2, disposition: "Blocked"
+      },
+      format: "$ts=rest$ firewall Deny $src_ip=ipv4$ $dst_ip=ipv4$ $service=word$ $src_port=word$ $dst_port=word$ .*",
+      halt: true
+    },
+
+    // IPS detection (proxy)
+    {
+      id: "wg_ips",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, type_uid: 200401,
+        finding_title: "WatchGuard IPS Detection",
+        severity_id: 5, severity: "Critical",
+        disposition_id: 2, disposition: "Blocked"
+      },
+      format: ".*IPS-detected $detail=rest$",
+      halt: true
+    }
+  ]
+}

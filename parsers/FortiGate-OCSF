@@ -1,0 +1,72 @@
+{
+  // FortiGate KV-format parser — OCSF v1.3.0
+  // Uses explicit anchors around each KV pair instead of generic kv type
+  attributes: {
+    "metadata.version":             "1.3.0",
+    "metadata.product.vendor_name": "Fortinet",
+    "metadata.product.name":        "FortiGate",
+    "metadata.log_provider":        "syslog",
+    "Category":               "network",
+    "dataSource.vendor":      "Fortinet",
+    "dataSource.name":        "FortiGate",
+    "dataSource.category":    "firewall",
+    "category_uid":           4,
+    "category_name":          "Network Activity",
+    "class_uid":              4001,
+    "class_name":             "Network Activity",
+    "activity_id":            6,
+    "type_uid":               400106,
+    "status_id":              1,
+    "severity_id":            1
+  },
+
+  patterns: {
+    qval: "(\"[^\"]*\"|\\S+)",
+    word: "\\S+",
+    rest: ".*"
+  },
+
+  formats: [
+    // IPS / UTM threat → Detection Finding
+    {
+      id: "fgt_ips",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, category_name: "Findings",
+        type_uid: 200401,
+        finding_title: "FortiGate IPS Detection",
+        severity_id: 5, severity: "Critical",
+        disposition_id: 2, disposition: "Blocked"
+      },
+      format: ".*type=\"ips\".* srcip=$src_ip=word$ .*dstip=$dst_ip=word$ .*attack=\"$attack=qval$\".*",
+      halt: true
+    },
+
+    // Forward traffic - Deny
+    {
+      id: "fgt_deny",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, category_name: "Findings",
+        type_uid: 200401,
+        finding_title: "FortiGate Firewall Deny",
+        severity_id: 3, severity: "Medium",
+        disposition_id: 2, disposition: "Blocked"
+      },
+      format: ".*action=\"deny\".* srcip=$src_ip=word$ .*srcport=$src_port=word$ .*dstip=$dst_ip=word$ .*dstport=$dst_port=word$ .*proto=$protocol=word$.*",
+      halt: true
+    },
+
+    // Forward traffic - Allow (passes through to default)
+    {
+      id: "fgt_traffic",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        type_uid: 400106,
+        disposition_id: 1, disposition: "Allowed"
+      },
+      format: ".* srcip=$src_ip=word$ .*srcport=$src_port=word$ .*dstip=$dst_ip=word$ .*dstport=$dst_port=word$ .*proto=$protocol=word$ .*action=\"$action=qval$\".*",
+      halt: true
+    }
+  ]
+}

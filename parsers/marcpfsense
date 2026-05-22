@@ -1,0 +1,63 @@
+{
+  attributes: {
+    "dataSource.vendor":   "pfSense",
+    "dataSource.name":     "pfSense",
+    "dataSource.category": "security"
+  },
+
+  patterns: {
+    tsPattern:     "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\+\\d{2}:\\d{2}",
+    ipv4:          "\\d+\\.\\d+\\.\\d+\\.\\d+",
+    ipv6:          "[a-fA-F0-9:]+",
+    ipv46:         "(\\d+\\.\\d+\\.\\d+\\.\\d+|[a-zA-Z0-9:]+)",
+    ipv:           "(4|6)",
+    hex:           "([a-f0-9]+x[a-f0-9]+){0,1}",
+    tcpflags:      "[SA\\.FRPUEW]+",
+    numberOrNone:  "[0-9]{0,}",
+    textOrNone:    "[a-zA-Z-\\.0-9]{0,}"
+  },
+
+  formats: [
+    {
+      // Base filterlog header
+      format: "$timestamp=tsPattern$ $hostname=ipv46$ filterlog: " +
+              "$pfRule=numberOrNone$,$pfSubRule=numberOrNone$," +
+              "$pfAnchor=textOrNone$,$pfTracker=numberOrNone$," +
+              "$pfInterface$,$pfReason=identifier$," +
+              "$pfAction=identifier$,$pfDirection=identifier$,.*"
+    },
+    {
+      // IPv4 header-specific fields
+      attributes: { pfIpv: 4 },
+      format: "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\+\\d{2}:\\d{2} " +
+              "(\\d+\\.\\d+\\.\\d+\\.\\d+|[a-zA-Z0-9:]+) filterlog: " +
+              "([a-zA-Z0-9-\\.]+,|,){8}4," +
+              "$pfTos=hex$,$pfEcn$,$pfTtl=numberOrNone$," +
+              "$pfPacketId=numberOrNone$,$pfOffset=numberOrNone$," +
+              "$pfIPFlags=identifier$,$pfProtocolID$,$msg$"
+    },
+    {
+      // TCP flow
+      attributes: { pfProtocol: "tcp" },
+      format: "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\+\\d{2}:\\d{2} " +
+              "(\\d+\\.\\d+\\.\\d+\\.\\d+|[a-zA-Z0-9:]+) filterlog: " +
+              "([a-zA-Z0-9-\\.]+,|,){16}tcp," +
+              "$pfPacketLen=number$,$pfSourceIP=ipv4$,$pfDestIP=ipv4$," +
+              "$pfSourcePort=number$,$pfDestPort=number$," +
+              "$pfDataLen=number$,$pfTCPFlags=tcpflags$," +
+              "$pfSeq=numberOrNone$,$pfAck=numberOrNone$," +
+              "$pfWindow=numberOrNone$,$pfUrg=textOrNone$,$pfTcpOptions$",
+      halt: true
+    },
+    {
+      // UDP flow
+      attributes: { pfProtocol: "udp" },
+      format: "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\+\\d{2}:\\d{2} " +
+              "(\\d+\\.\\d+\\.\\d+\\.\\d+|[a-zA-Z0-9:]+) filterlog: " +
+              "([a-zA-Z0-9-\\.]+,|,){16}udp," +
+              "$pfPacketLen=number$,$pfSourceIP=ipv4$,$pfDestIP=ipv4$," +
+              "$pfSourcePort=number$,$pfDestPort=number$,$pfDataLen=number$",
+      halt: true
+    }
+  ]
+}

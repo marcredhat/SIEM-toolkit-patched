@@ -1,0 +1,585 @@
+{
+  "configType": "TABBED",
+  "duration": "24h",
+  "description": "BSI / NIS2 healthcare compliance \u2014 Avelios Medical HIS + Omniconnect TI Gateway",
+  "tabs": [
+    {
+      "tabName": "Overview",
+      "graphs": [
+        {
+          "title": "BSI / NIS2 Healthcare Compliance \u2014 Overview",
+          "graphStyle": "markdown",
+          "markdown": "**Scope:** Avelios Medical Hospital Information System (HIS) + Omniconnect HIS\u2194Telematics Infrastructure (TI) gateway.\n\n**Frameworks:** BSI-Grundschutz \u00b7 NIS2 \u00b7 GDPR \u00b7 gematik TI.\n\nAll events are OCSF-enriched (v1.3.0) by the deployed parsers `Avelios-Medical-OCSF` and `Omniconnect-OCSF`.",
+          "layout": {
+            "w": 60,
+            "h": 4,
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "title": "Total Healthcare Events",
+          "graphStyle": "number",
+          "query": "(serverHost='avelios-medical' or serverHost='omniconnect') | group ct=count() | limit 1",
+          "options": {
+            "format": "auto",
+            "precision": "0",
+            "suffix": " events"
+          },
+          "layout": {
+            "w": 15,
+            "h": 8,
+            "x": 0,
+            "y": 4
+          }
+        },
+        {
+          "title": "Avelios Events",
+          "graphStyle": "number",
+          "query": "serverHost='avelios-medical' | group ct=count() | limit 1",
+          "options": {
+            "format": "auto",
+            "precision": "0",
+            "suffix": ""
+          },
+          "layout": {
+            "w": 15,
+            "h": 8,
+            "x": 15,
+            "y": 4
+          }
+        },
+        {
+          "title": "Omniconnect Events",
+          "graphStyle": "number",
+          "query": "serverHost='omniconnect' | group ct=count() | limit 1",
+          "options": {
+            "format": "auto",
+            "precision": "0",
+            "suffix": ""
+          },
+          "layout": {
+            "w": 15,
+            "h": 8,
+            "x": 30,
+            "y": 4
+          }
+        },
+        {
+          "title": "Critical Findings",
+          "graphStyle": "number",
+          "query": "(serverHost='avelios-medical' or serverHost='omniconnect') severity_id='6' | group ct=count() | limit 1",
+          "options": {
+            "format": "auto",
+            "precision": "0",
+            "suffix": ""
+          },
+          "layout": {
+            "w": 15,
+            "h": 8,
+            "x": 45,
+            "y": 4
+          }
+        },
+        {
+          "title": "Events by Source",
+          "graphStyle": "donut",
+          "maxPieSlices": 10,
+          "dataLabelType": "PERCENTAGE",
+          "query": "(serverHost='avelios-medical' or serverHost='omniconnect') | group ct=count() by serverHost",
+          "layout": {
+            "w": 30,
+            "h": 14,
+            "x": 0,
+            "y": 12
+          }
+        },
+        {
+          "title": "OCSF Severity Distribution",
+          "graphStyle": "donut",
+          "maxPieSlices": 10,
+          "dataLabelType": "PERCENTAGE",
+          "query": "(serverHost='avelios-medical' or serverHost='omniconnect') severity_str=* | group ct=count() by severity_str",
+          "layout": {
+            "w": 30,
+            "h": 14,
+            "x": 30,
+            "y": 12
+          }
+        },
+        {
+          "title": "Events by OCSF Class (per source)",
+          "graphStyle": "stacked_bar",
+          "xAxis": "grouped_data",
+          "yScale": "linear",
+          "query": "(serverHost='avelios-medical' or serverHost='omniconnect') class_name=* | group ct=count() by class_name, serverHost | sort -ct",
+          "layout": {
+            "w": 60,
+            "h": 16,
+            "x": 0,
+            "y": 26
+          }
+        },
+        {
+          "title": "Recent HIGH / CRITICAL events",
+          "graphStyle": "table",
+          "query": "(serverHost='avelios-medical' or serverHost='omniconnect') (severity_str='HIGH' or severity_str='CRITICAL') | columns timestamp, serverHost, event_category, event_type, severity_str | sort -timestamp | limit 25",
+          "layout": {
+            "w": 60,
+            "h": 18,
+            "x": 0,
+            "y": 42
+          }
+        }
+      ]
+    },
+    {
+      "tabName": "Avelios HIS",
+      "graphs": [
+        {
+          "title": "Avelios Medical \u2014 Hospital Information System",
+          "graphStyle": "markdown",
+          "markdown": "Patient-data access (PHI / GDPR Art. 32), authentication, administrative changes and security findings.\n\n**Relevant BSI controls:** ORP.4 (Identity Management), OPS.1.1 (Logging), CON.3 (Data Protection), DER.1 (Detection).",
+          "layout": {
+            "w": 60,
+            "h": 4,
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "title": "Total Avelios Events",
+          "graphStyle": "number",
+          "query": "serverHost='avelios-medical' | group ct=count() | limit 1",
+          "options": {
+            "format": "auto",
+            "precision": "0",
+            "suffix": ""
+          },
+          "layout": {
+            "w": 15,
+            "h": 8,
+            "x": 0,
+            "y": 4
+          }
+        },
+        {
+          "title": "PHI Access Events",
+          "graphStyle": "number",
+          "query": "serverHost='avelios-medical' event_category='patient_access' | group ct=count() | limit 1",
+          "options": {
+            "format": "auto",
+            "precision": "0",
+            "suffix": ""
+          },
+          "layout": {
+            "w": 15,
+            "h": 8,
+            "x": 15,
+            "y": 4
+          }
+        },
+        {
+          "title": "Auth Failures",
+          "graphStyle": "number",
+          "query": "serverHost='avelios-medical' event_category='authentication' outcome='failure' | group ct=count() | limit 1",
+          "options": {
+            "format": "auto",
+            "precision": "0",
+            "suffix": ""
+          },
+          "layout": {
+            "w": 15,
+            "h": 8,
+            "x": 30,
+            "y": 4
+          }
+        },
+        {
+          "title": "Security Findings",
+          "graphStyle": "number",
+          "query": "serverHost='avelios-medical' category_uid='2' | group ct=count() | limit 1",
+          "options": {
+            "format": "auto",
+            "precision": "0",
+            "suffix": ""
+          },
+          "layout": {
+            "w": 15,
+            "h": 8,
+            "x": 45,
+            "y": 4
+          }
+        },
+        {
+          "title": "Avelios \u2014 Event Categories",
+          "graphStyle": "donut",
+          "maxPieSlices": 10,
+          "dataLabelType": "PERCENTAGE",
+          "query": "serverHost='avelios-medical' event_category=* | group ct=count() by event_category",
+          "layout": {
+            "w": 30,
+            "h": 14,
+            "x": 0,
+            "y": 12
+          }
+        },
+        {
+          "title": "Avelios \u2014 Severity Mix",
+          "graphStyle": "donut",
+          "maxPieSlices": 10,
+          "dataLabelType": "PERCENTAGE",
+          "query": "serverHost='avelios-medical' severity_str=* | group ct=count() by severity_str",
+          "layout": {
+            "w": 30,
+            "h": 14,
+            "x": 30,
+            "y": 12
+          }
+        },
+        {
+          "title": "PHI Access (BSI CON.3 / GDPR Art. 32)",
+          "graphStyle": "table",
+          "query": "serverHost='avelios-medical' event_category='patient_access' | group ct=count() by event_type, severity_str | sort -ct | limit 25",
+          "layout": {
+            "w": 30,
+            "h": 14,
+            "x": 0,
+            "y": 26
+          }
+        },
+        {
+          "title": "Authentication Outcomes",
+          "graphStyle": "table",
+          "query": "serverHost='avelios-medical' event_category='authentication' | group ct=count() by event_type, outcome | sort -ct | limit 25",
+          "layout": {
+            "w": 30,
+            "h": 14,
+            "x": 30,
+            "y": 26
+          }
+        },
+        {
+          "title": "Administrative Changes (BSI ORP.4)",
+          "graphStyle": "table",
+          "query": "serverHost='avelios-medical' event_category='administrative' | group ct=count() by event_type, outcome | sort -ct | limit 25",
+          "layout": {
+            "w": 30,
+            "h": 14,
+            "x": 0,
+            "y": 40
+          }
+        },
+        {
+          "title": "Avelios Security Findings",
+          "graphStyle": "table",
+          "query": "serverHost='avelios-medical' category_uid='2' | columns timestamp, event_type, severity_str | sort -timestamp | limit 25",
+          "layout": {
+            "w": 30,
+            "h": 14,
+            "x": 30,
+            "y": 40
+          }
+        }
+      ]
+    },
+    {
+      "tabName": "Omniconnect",
+      "graphs": [
+        {
+          "title": "Omniconnect \u2014 HIS \u2194 Telematics Infrastructure (TI)",
+          "graphStyle": "markdown",
+          "markdown": "Konnektor health, eGK / HBA / SMC-B card operations, eRezept, ePA, VSDM and KIM secure messaging.\n\n**Relevant frameworks:** gematik TI, BSI TR-03116, NIS2 Annex II.",
+          "layout": {
+            "w": 60,
+            "h": 4,
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "title": "Total Omniconnect Events",
+          "graphStyle": "number",
+          "query": "serverHost='omniconnect' | group ct=count() | limit 1",
+          "options": {
+            "format": "auto",
+            "precision": "0",
+            "suffix": ""
+          },
+          "layout": {
+            "w": 15,
+            "h": 8,
+            "x": 0,
+            "y": 4
+          }
+        },
+        {
+          "title": "TI Connection Events",
+          "graphStyle": "number",
+          "query": "serverHost='omniconnect' event_category='ti_connection' | group ct=count() | limit 1",
+          "options": {
+            "format": "auto",
+            "precision": "0",
+            "suffix": ""
+          },
+          "layout": {
+            "w": 15,
+            "h": 8,
+            "x": 15,
+            "y": 4
+          }
+        },
+        {
+          "title": "Card Operations",
+          "graphStyle": "number",
+          "query": "serverHost='omniconnect' event_category='card_operations' | group ct=count() | limit 1",
+          "options": {
+            "format": "auto",
+            "precision": "0",
+            "suffix": ""
+          },
+          "layout": {
+            "w": 15,
+            "h": 8,
+            "x": 30,
+            "y": 4
+          }
+        },
+        {
+          "title": "Cert / Crypto Failures",
+          "graphStyle": "number",
+          "query": "serverHost='omniconnect' (event_type='CERTIFICATE_EXPIRED' or event_type='CERTIFICATE_VALIDATION_FAILED' or event_type='ENCRYPTION_FAILED' or event_type='SIGNATURE_VERIFICATION_FAILED') | group ct=count() | limit 1",
+          "options": {
+            "format": "auto",
+            "precision": "0",
+            "suffix": ""
+          },
+          "layout": {
+            "w": 15,
+            "h": 8,
+            "x": 45,
+            "y": 4
+          }
+        },
+        {
+          "title": "Omniconnect \u2014 Event Categories",
+          "graphStyle": "donut",
+          "maxPieSlices": 10,
+          "dataLabelType": "PERCENTAGE",
+          "query": "serverHost='omniconnect' event_category=* | group ct=count() by event_category",
+          "layout": {
+            "w": 30,
+            "h": 14,
+            "x": 0,
+            "y": 12
+          }
+        },
+        {
+          "title": "Omniconnect \u2014 Severity Mix",
+          "graphStyle": "donut",
+          "maxPieSlices": 10,
+          "dataLabelType": "PERCENTAGE",
+          "query": "serverHost='omniconnect' severity_str=* | group ct=count() by severity_str",
+          "layout": {
+            "w": 30,
+            "h": 14,
+            "x": 30,
+            "y": 12
+          }
+        },
+        {
+          "title": "TI Connection Issues",
+          "graphStyle": "table",
+          "query": "serverHost='omniconnect' event_category='ti_connection' outcome!='success' | group ct=count() by event_type, severity_str | sort -ct | limit 25",
+          "layout": {
+            "w": 30,
+            "h": 14,
+            "x": 0,
+            "y": 26
+          }
+        },
+        {
+          "title": "Card Operations (eGK / HBA / SMC-B)",
+          "graphStyle": "table",
+          "query": "serverHost='omniconnect' event_category='card_operations' | group ct=count() by event_type, outcome | sort -ct | limit 25",
+          "layout": {
+            "w": 30,
+            "h": 14,
+            "x": 30,
+            "y": 26
+          }
+        },
+        {
+          "title": "eRezept Activity",
+          "graphStyle": "table",
+          "query": "serverHost='omniconnect' event_category='erezept' | group ct=count() by event_type, outcome | sort -ct | limit 25",
+          "layout": {
+            "w": 30,
+            "h": 14,
+            "x": 0,
+            "y": 40
+          }
+        },
+        {
+          "title": "ePA / KIM Activity",
+          "graphStyle": "table",
+          "query": "serverHost='omniconnect' (event_category='epa' or event_category='kim') | group ct=count() by event_category, event_type | sort -ct | limit 25",
+          "layout": {
+            "w": 30,
+            "h": 14,
+            "x": 30,
+            "y": 40
+          }
+        }
+      ]
+    },
+    {
+      "tabName": "Compliance",
+      "graphs": [
+        {
+          "title": "BSI / NIS2 Compliance Findings",
+          "graphStyle": "markdown",
+          "markdown": "OCSF Security Findings (`category_uid=2`) across both healthcare platforms, mapped to BSI-Grundschutz controls and NIS2 Annex II obligations (incident handling, encryption, access control, supply-chain security).",
+          "layout": {
+            "w": 60,
+            "h": 4,
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "title": "Total Findings",
+          "graphStyle": "number",
+          "query": "(serverHost='avelios-medical' or serverHost='omniconnect') category_uid='2' | group ct=count() | limit 1",
+          "options": {
+            "format": "auto",
+            "precision": "0",
+            "suffix": ""
+          },
+          "layout": {
+            "w": 15,
+            "h": 8,
+            "x": 0,
+            "y": 4
+          }
+        },
+        {
+          "title": "CRITICAL Findings",
+          "graphStyle": "number",
+          "query": "(serverHost='avelios-medical' or serverHost='omniconnect') category_uid='2' severity_str='CRITICAL' | group ct=count() | limit 1",
+          "options": {
+            "format": "auto",
+            "precision": "0",
+            "suffix": ""
+          },
+          "layout": {
+            "w": 15,
+            "h": 8,
+            "x": 15,
+            "y": 4
+          }
+        },
+        {
+          "title": "HIGH Findings",
+          "graphStyle": "number",
+          "query": "(serverHost='avelios-medical' or serverHost='omniconnect') category_uid='2' severity_str='HIGH' | group ct=count() | limit 1",
+          "options": {
+            "format": "auto",
+            "precision": "0",
+            "suffix": ""
+          },
+          "layout": {
+            "w": 15,
+            "h": 8,
+            "x": 30,
+            "y": 4
+          }
+        },
+        {
+          "title": "Auth Failures (24h)",
+          "graphStyle": "number",
+          "query": "(serverHost='avelios-medical' or serverHost='omniconnect') (event_type='USER_LOGIN_FAILURE' or event_type='CARD_AUTHENTICATION_FAILED' or event_type='CARD_PIN_FAILED') | group ct=count() | limit 1",
+          "options": {
+            "format": "auto",
+            "precision": "0",
+            "suffix": ""
+          },
+          "layout": {
+            "w": 15,
+            "h": 8,
+            "x": 45,
+            "y": 4
+          }
+        },
+        {
+          "title": "Findings by Type per Source (NIS2 Annex II)",
+          "graphStyle": "stacked_bar",
+          "xAxis": "grouped_data",
+          "yScale": "linear",
+          "query": "(serverHost='avelios-medical' or serverHost='omniconnect') category_uid='2' | group ct=count() by event_type, serverHost | sort -ct",
+          "layout": {
+            "w": 60,
+            "h": 18,
+            "x": 0,
+            "y": 12
+          }
+        },
+        {
+          "title": "BSI ORP.4 \u2014 Identity & Access Anomalies",
+          "graphStyle": "table",
+          "query": "(serverHost='avelios-medical' or serverHost='omniconnect') (event_type='ACCOUNT_LOCKED' or event_type='UNAUTHORIZED_ACCESS_ATTEMPT' or event_type='PRIVILEGE_ESCALATION_ATTEMPT' or event_type='CARD_PIN_BLOCKED') | group ct=count() by serverHost, event_type, severity_str | sort -ct | limit 25",
+          "layout": {
+            "w": 30,
+            "h": 14,
+            "x": 0,
+            "y": 30
+          }
+        },
+        {
+          "title": "BSI CON.1 \u2014 Crypto / Certificate Issues",
+          "graphStyle": "table",
+          "query": "(serverHost='avelios-medical' or serverHost='omniconnect') (event_type contains 'CERTIFICATE' or event_type contains 'ENCRYPTION' or event_type contains 'SIGNATURE') outcome!='success' | group ct=count() by serverHost, event_type, severity_str | sort -ct | limit 25",
+          "layout": {
+            "w": 30,
+            "h": 14,
+            "x": 30,
+            "y": 30
+          }
+        },
+        {
+          "title": "BSI DER.1 \u2014 Threats & Intrusions",
+          "graphStyle": "table",
+          "query": "(serverHost='avelios-medical' or serverHost='omniconnect') (event_type='MALWARE_DETECTED' or event_type='INTRUSION_DETECTED' or event_type='TAMPER_DETECTION' or event_type='SECURITY_POLICY_VIOLATION') | columns timestamp, serverHost, event_type, severity_str | sort -timestamp | limit 25",
+          "layout": {
+            "w": 30,
+            "h": 14,
+            "x": 0,
+            "y": 44
+          }
+        },
+        {
+          "title": "GDPR Art. 32 \u2014 Data-Processing Events",
+          "graphStyle": "table",
+          "query": "(serverHost='avelios-medical' or serverHost='omniconnect') (event_type='EMERGENCY_ACCESS_OVERRIDE' or event_type='PATIENT_RECORD_DELETE' or event_type='DATA_EXPORT_INITIATED' or event_type='AUDIT_LOG_EXPORT' or event_type='EPA_EMERGENCY_ACCESS') | group ct=count() by serverHost, event_type | sort -ct | limit 25",
+          "layout": {
+            "w": 30,
+            "h": 14,
+            "x": 30,
+            "y": 44
+          }
+        },
+        {
+          "title": "Compliance Control Mapping",
+          "graphStyle": "markdown",
+          "markdown": "| Control | BSI / NIS2 ref | Evidence query |\n|---|---|---|\n| Identity & Access | BSI ORP.4 / NIS2 Art. 21(2)(i) | `event_category in (authentication, card_operations)` |\n| Logging & Audit | BSI OPS.1.1 / NIS2 Art. 21(2)(b) | All ingested events |\n| Cryptography | BSI CON.1 / NIS2 Art. 21(2)(h) | `event_type contains CERTIFICATE/ENCRYPTION/SIGNATURE` |\n| Incident Detection | BSI DER.1 / NIS2 Art. 21(2)(c) | `category_uid=2` |\n| Data Protection | BSI CON.3 / GDPR Art. 32 | `event_category=patient_access OR epa` |\n| Supply Chain (TI) | BSI TR-03116 / NIS2 Art. 21(2)(d) | `event_category=ti_connection` |",
+          "layout": {
+            "w": 60,
+            "h": 12,
+            "x": 0,
+            "y": 58
+          }
+        }
+      ]
+    }
+  ]
+}

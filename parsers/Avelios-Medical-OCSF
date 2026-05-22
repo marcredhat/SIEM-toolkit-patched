@@ -1,0 +1,77 @@
+{
+  // Avelios Medical OCSF Parser  -  OCSF v1.3.0
+  // Hospital Information System (HIS) - BSI / NIS2 compliance events
+  attributes: {
+    "metadata.version":             "1.3.0",
+    "metadata.product.vendor_name": "Avelios",
+    "metadata.product.name":        "Avelios Medical HIS",
+    "metadata.log_provider":        "hec",
+    "Category":                     "healthcare",
+    "dataSource.vendor":            "Avelios",
+    "dataSource.name":              "Avelios Medical",
+    "dataSource.category":          "Healthcare"
+  },
+
+  formats: [
+    {
+      // Auto-extract every JSON top-level field as an attribute
+      format: "$=json{parse=json}$",
+      halt: true,
+      rewrites: [
+        // ─── OCSF classification by event_category ──────────────────────
+        { input: "event_category", output: "category_uid",  match: "authentication",  replace: "3" },
+        { input: "event_category", output: "category_name", match: "authentication",  replace: "Identity & Access Management" },
+        { input: "event_category", output: "class_uid",     match: "authentication",  replace: "3002" },
+        { input: "event_category", output: "class_name",    match: "authentication",  replace: "Authentication" },
+
+        { input: "event_category", output: "category_uid",  match: "patient_access",  replace: "6" },
+        { input: "event_category", output: "category_name", match: "patient_access",  replace: "Application Activity" },
+        { input: "event_category", output: "class_uid",     match: "patient_access",  replace: "6001" },
+        { input: "event_category", output: "class_name",    match: "patient_access",  replace: "Web Resources Activity" },
+
+        { input: "event_category", output: "category_uid",  match: "administrative",  replace: "6" },
+        { input: "event_category", output: "category_name", match: "administrative",  replace: "Application Activity" },
+        { input: "event_category", output: "class_uid",     match: "administrative",  replace: "6001" },
+        { input: "event_category", output: "class_name",    match: "administrative",  replace: "Web Resources Activity" },
+
+        { input: "event_category", output: "category_uid",  match: "data_transfer",   replace: "4" },
+        { input: "event_category", output: "category_name", match: "data_transfer",   replace: "Network Activity" },
+        { input: "event_category", output: "class_uid",     match: "data_transfer",   replace: "4001" },
+        { input: "event_category", output: "class_name",    match: "data_transfer",   replace: "Network Activity" },
+
+        { input: "event_category", output: "category_uid",  match: "security",        replace: "2" },
+        { input: "event_category", output: "category_name", match: "security",        replace: "Findings" },
+        { input: "event_category", output: "class_uid",     match: "security",        replace: "2001" },
+        { input: "event_category", output: "class_name",    match: "security",        replace: "Security Finding" },
+
+        { input: "event_category", output: "category_uid",  match: "system",          replace: "6" },
+        { input: "event_category", output: "category_name", match: "system",          replace: "Application Activity" },
+        { input: "event_category", output: "class_uid",     match: "system",          replace: "6007" },
+        { input: "event_category", output: "class_name",    match: "system",          replace: "Application Lifecycle" },
+
+        // ─── Severity mapping (string + OCSF int 0-6) ───────────────────
+        { input: "severity", output: "severity_id",  match: "(?i)critical", replace: "6" },
+        { input: "severity", output: "severity_id",  match: "(?i)high",     replace: "5" },
+        { input: "severity", output: "severity_id",  match: "(?i)medium",   replace: "4" },
+        { input: "severity", output: "severity_id",  match: "(?i)low",      replace: "2" },
+        { input: "severity", output: "severity_id",  match: "(?i)info",     replace: "1" },
+        { input: "severity", output: "severity_str", match: ".*",           replace: "$0" },
+
+        // ─── Status mapping ─────────────────────────────────────────────
+        { input: "outcome",  output: "status_id", match: "success",  replace: "1" },
+        { input: "outcome",  output: "status_id", match: "failure",  replace: "2" },
+        { input: "outcome",  output: "status_id", match: "detected", replace: "2" },
+        { input: "outcome",  output: "status",    match: ".*",       replace: "$0" },
+
+        // ─── Activity / message ─────────────────────────────────────────
+        { input: "event_type", output: "activity_name",       match: ".*", replace: "$0" },
+        { input: "event_type", output: "finding_info.title",  match: ".*", replace: "$0" },
+        { input: "event_id",   output: "finding_info.uid",    match: ".*", replace: "$0" },
+        { input: "timestamp",  output: "finding_info.created_time_dt", match: ".*", replace: "$0" },
+
+        // ─── Compliance tags (BSI / NIS2 / GDPR) ────────────────────────
+        { input: "event_category", output: "compliance.standard", match: ".*", replace: "BSI-Grundschutz,NIS2,GDPR" }
+      ]
+    }
+  ]
+}

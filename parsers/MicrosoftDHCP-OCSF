@@ -1,0 +1,61 @@
+{
+  // Microsoft DHCP server CSV parser — OCSF v1.3.0
+  // Format: ID,Date,Time,Description,IP Address,Host Name,MAC Address,User Name,...
+  attributes: {
+    "metadata.version":             "1.3.0",
+    "metadata.product.vendor_name": "Microsoft",
+    "metadata.product.name":        "DHCP Server",
+    "Category":               "network",
+    "dataSource.vendor":      "Microsoft",
+    "dataSource.name":        "DHCP Server",
+    "dataSource.category":    "network",
+    "category_uid":           4,
+    "category_name":          "Network Activity",
+    "class_uid":              4004,
+    "class_name":             "DHCP Activity",
+    "activity_id":            1,
+    "type_uid":               400401,
+    "status_id":              1,
+    "severity_id":            1
+  },
+
+  patterns: {
+    csv: "[^,]*"
+  },
+
+  formats: [
+    // Standard DHCP event
+    {
+      id: "dhcp_event",
+      attributes: {
+        class_uid: 4004, class_name: "DHCP Activity",
+        type_uid: 400401
+      },
+      format: "$event_id=csv$,$date=csv$,$time=csv$,$action=csv$,$client_ip=csv$,$host_name=csv$,$mac=csv$,$user_name=csv$,.*",
+      halt: true,
+      rewrites: [
+        { input: "client_ip",  output: "src_endpoint.ip", match: ".*", replace: "$0" },
+        { input: "client_ip",  output: "src_ip",          match: ".*", replace: "$0" },
+        { input: "mac",        output: "src_endpoint.mac", match: ".*", replace: "$0" },
+        { input: "host_name",  output: "device.hostname", match: ".*", replace: "$0" },
+        { input: "user_name",  output: "actor.user.name", match: ".*", replace: "$0" },
+        { input: "action",     output: "activity_name",   match: ".*", replace: "$0" },
+
+        // Activity ID by event_id
+        { input: "event_id", output: "activity_id", match: "^10$", replace: "1" },  // Assign
+        { input: "event_id", output: "activity_id", match: "^11$", replace: "2" },  // Renew
+        { input: "event_id", output: "activity_id", match: "^12$", replace: "3" },  // Release
+        { input: "event_id", output: "activity_id", match: "^13$", replace: "4" },  // Conflict
+
+        // Detection Finding: rogue DHCP / IP conflict
+        { input: "event_id", output: "class_uid",     match: "^13$", replace: "2004" },
+        { input: "event_id", output: "class_name",    match: "^13$", replace: "Detection Finding" },
+        { input: "event_id", output: "category_uid",  match: "^13$", replace: "2" },
+        { input: "event_id", output: "type_uid",      match: "^13$", replace: "200401" },
+        { input: "event_id", output: "finding_title", match: "^13$", replace: "DHCP IP Address Conflict" },
+        { input: "event_id", output: "severity_id",   match: "^13$", replace: "4" },
+        { input: "event_id", output: "severity",      match: "^13$", replace: "High" }
+      ]
+    }
+  ]
+}

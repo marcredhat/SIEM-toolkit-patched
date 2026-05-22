@@ -1,0 +1,113 @@
+// SentinelOne AI SIEM Parser: Microsoft DNS Debug Log
+// OCSF Schema Version: 1.1.0
+// Maps Microsoft DNS debug logs to OCSF classes
+// Primary Class: DNS Activity (4003)
+
+{
+  "parserName": "MicrosoftDNS-OCSF",
+  "version": "1.0.0",
+  "vendor": "Microsoft",
+  "product": "DNS Server",
+  "format": "regex",
+  
+  "patterns": [
+    // DNS Query/Response
+    {
+      "pattern": "^(\\d+/\\d+/\\d+)\\s+(\\d+:\\d+:\\d+\\s+[AP]M)\\s+(\\w+)\\s+PACKET\\s+(\\w+)\\s+(UDP|TCP)\\s+(Rcv|Snd)\\s+([\\d.]+)\\s+(\\w+)\\s+([RQ\\s]+)\\s+\\[([^\\]]+)\\]\\s+(\\w+)\\s+(.+)$",
+      "rewrites": [
+        {"set": "class_uid", "value": "4003"},
+        {"set": "class_name", "value": "DNS Activity"},
+        {"set": "category_uid", "value": "4"},
+        {"set": "category_name", "value": "Network Activity"},
+        
+        // Activity based on direction
+        {"group": 6, "to": "direction"},
+        {"lookup": "direction", "map": {"Rcv": 1, "Snd": 2}, "to": "activity_id"},
+        {"lookup": "direction", "map": {"Rcv": "Query", "Snd": "Response"}, "to": "activity_name"},
+        
+        // Metadata
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Microsoft DNS"},
+        {"set": "metadata.product.vendor_name", "value": "Microsoft"},
+        {"group": 3, "to": "metadata.uid"},
+        {"group": 4, "to": "metadata.log_name"},
+        
+        // Time
+        {"concat": ["$1", " ", "$2"], "to": "time"},
+        
+        // Protocol
+        {"group": 5, "to": "connection_info.protocol_name"},
+        
+        // Client IP
+        {"group": 7, "to": "src_endpoint.ip"},
+        
+        // Transaction ID
+        {"group": 8, "to": "query_info.uid"},
+        
+        // Flags
+        {"group": 9, "to": "query_info.flags"},
+        {"group": 10, "to": "rcode_name"},
+        
+        // Query type
+        {"group": 11, "to": "query_info.type"},
+        
+        // Query name (decode DNS format)
+        {"group": 12, "to": "query_info.hostname", "transform": "decodeDnsName"},
+        
+        // Response code mapping
+        {"lookup": "rcode_name", "map": {
+          "NOERROR": 0, "FORMERR": 1, "SERVFAIL": 2, "NXDOMAIN": 3,
+          "NOTIMP": 4, "REFUSED": 5, "YXDOMAIN": 6, "YXRRSET": 7
+        }, "to": "rcode_id"},
+        
+        // Status based on response code
+        {"set": "status_id", "value": "1", "if": "NOERROR"},
+        {"set": "status", "value": "Success", "if": "NOERROR"},
+        {"set": "status_id", "value": "2", "if": "REFUSED|NXDOMAIN|SERVFAIL"},
+        {"set": "status", "value": "Failure", "if": "REFUSED|NXDOMAIN|SERVFAIL"},
+        
+        // Observables
+        {"array": "observables", "append": {"type": "IP Address", "type_id": 2, "value": "$7"}},
+        {"array": "observables", "append": {"type": "Hostname", "type_id": 1, "value": "$query_info.hostname"}}
+      ]
+    }
+  ],
+  
+  "transforms": {
+    "decodeDnsName": {
+      "description": "Converts DNS wire format (4)mail(4)corp(5)local(0) to mail.corp.local",
+      "regex": "\\((\\d+)\\)([^(]+)",
+      "replace": "$2.",
+      "trim": "."
+    }
+  },
+  
+  "query_type_mappings": {
+    "A": {"id": 1, "name": "A (IPv4 Address)"},
+    "AAAA": {"id": 28, "name": "AAAA (IPv6 Address)"},
+    "MX": {"id": 15, "name": "MX (Mail Exchange)"},
+    "TXT": {"id": 16, "name": "TXT (Text)"},
+    "CNAME": {"id": 5, "name": "CNAME (Canonical Name)"},
+    "NS": {"id": 2, "name": "NS (Name Server)"},
+    "SOA": {"id": 6, "name": "SOA (Start of Authority)"},
+    "PTR": {"id": 12, "name": "PTR (Pointer)"},
+    "SRV": {"id": 33, "name": "SRV (Service)"},
+    "AXFR": {"id": 252, "name": "AXFR (Zone Transfer)"},
+    "ANY": {"id": 255, "name": "ANY (All Records)"}
+  },
+  
+  "security_indicators": {
+    "zone_transfer": {
+      "condition": "query_info.type == 'AXFR'",
+      "severity_id": 4,
+      "severity": "High",
+      "finding_info.title": "DNS Zone Transfer Attempt"
+    },
+    "any_query": {
+      "condition": "query_info.type == 'ANY'",
+      "severity_id": 3,
+      "severity": "Medium",
+      "finding_info.title": "DNS ANY Query (Potential Amplification)"
+    }
+  }
+}

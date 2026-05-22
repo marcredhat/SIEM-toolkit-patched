@@ -1,0 +1,135 @@
+{
+  // Darktrace JSON parser - OCSF v1.3.0
+  // Handles JSON-formatted Darktrace events from serverHost='darktrace_darktrace_logs-latest'
+  //
+  // Supports:
+  //   1. Model Breach events (with "model.name", "device.*", "score")
+  //   2. AI Analyst Incidents (with "summary", "title", "incidentId", "groupSeverity")
+  //
+  // Maps to OCSF Detection Finding (class_uid 2004) for Library Detection compatibility.
+
+  attributes: {
+    "marc_ocsf_signature":          "MARC-OCSF-PARSER-ACTIVE-77777",
+    "metadata.version":             "1.3.0",
+    "metadata.product.vendor_name": "Darktrace",
+    "metadata.product.name":        "Enterprise Immune System",
+    "metadata.log_provider":        "darktrace-integration",
+
+    "dataSource.vendor":            "Darktrace",
+    "dataSource.name":              "Darktrace",
+    "dataSource.category":          "ndr",
+
+    "category_uid":                 2,
+    "category_name":                "Findings",
+    "class_uid":                    2004,
+    "class_name":                   "Detection Finding",
+    "type_uid":                     200401,
+    "activity_id":                  1,
+
+    "event.type":                   "Create",
+    "event.category":               "security",
+
+    "status_id":                    1,
+    "status":                       "New"
+  },
+
+  formats: [
+    // ============================================================
+    // 1. Model Breach (has "model.name" and "pbid")
+    // ============================================================
+    {
+      id: "dt_model_breach_json",
+      attributes: {
+        finding_title: "Darktrace Model Breach"
+      },
+      format: "$=json{parse=json}$",
+      halt: true,
+      rewrites: [
+        // Extract nested JSON fields via regex on raw message (parse=json doesn't flatten nested)
+        { input: "message", output: "unmapped.model.then.name",
+          match: ".*\"model\"\\s*:\\s*\\{[^}]*\"name\"\\s*:\\s*\"([^\"]+)\".*", replace: "$1" },
+        { input: "message", output: "model_name",
+          match: ".*\"model\"\\s*:\\s*\\{[^}]*\"name\"\\s*:\\s*\"([^\"]+)\".*", replace: "$1" },
+        { input: "message", output: "finding_title",
+          match: ".*\"model\"\\s*:\\s*\\{[^}]*\"name\"\\s*:\\s*\"([^\"]+)\".*", replace: "Darktrace: $1" },
+
+        // Device → asset/host fields (extract from nested device object)
+        { input: "message", output: "src_ip",
+          match: ".*\"device\"\\s*:\\s*\\{[^}]*\"ip\"\\s*:\\s*\"([0-9.]+)\".*", replace: "$1" },
+        { input: "message", output: "src_hostname",
+          match: ".*\"device\"\\s*:\\s*\\{[^}]*\"hostname\"\\s*:\\s*\"([^\"]+)\".*", replace: "$1" },
+        { input: "message", output: "endpoint.name",
+          match: ".*\"device\"\\s*:\\s*\\{[^}]*\"hostname\"\\s*:\\s*\"([^\"]+)\".*", replace: "$1" },
+        { input: "message", output: "endpoint.os",
+          match: ".*\"device\"\\s*:\\s*\\{[^}]*\"os\"\\s*:\\s*\"([^\"]+)\".*", replace: "$1" },
+        { input: "message", output: "src_mac",
+          match: ".*\"device\"\\s*:\\s*\\{[^}]*\"mac\"\\s*:\\s*\"([^\"]+)\".*", replace: "$1" },
+
+        // Score (0.0-1.0) → severity_id (OCSF 0-6)
+        { input: "score", output: "severity_id", match: "^0\\.[0-1].*",  replace: "1" },  // Info
+        { input: "score", output: "severity_id", match: "^0\\.[2-3].*",  replace: "2" },  // Low
+        { input: "score", output: "severity_id", match: "^0\\.[4-5].*",  replace: "3" },  // Medium
+        { input: "score", output: "severity_id", match: "^0\\.[6-7].*",  replace: "4" },  // High
+        { input: "score", output: "severity_id", match: "^0\\.[8-9].*",  replace: "5" },  // Critical
+        { input: "score", output: "severity_id", match: "^1(\\.0)?$",    replace: "5" },  // Critical
+
+        { input: "score", output: "severity",    match: "^0\\.[0-1].*",  replace: "Informational" },
+        { input: "score", output: "severity",    match: "^0\\.[2-3].*",  replace: "Low" },
+        { input: "score", output: "severity",    match: "^0\\.[4-5].*",  replace: "Medium" },
+        { input: "score", output: "severity",    match: "^0\\.[6-7].*",  replace: "High" },
+        { input: "score", output: "severity",    match: "^0\\.[8-9].*",  replace: "Critical" },
+        { input: "score", output: "severity",    match: "^1(\\.0)?$",    replace: "Critical" },
+
+        // IDs (top-level pbid works, nested model.id/uuid via regex)
+        { input: "pbid",    output: "external_id", match: ".*", replace: "$0" },
+        { input: "message", output: "rule_uid",
+          match: ".*\"model\"\\s*:\\s*\\{[^}]*\"id\"\\s*:\\s*([0-9]+).*", replace: "$1" },
+        { input: "message", output: "rule_uuid",
+          match: ".*\"model\"\\s*:\\s*\\{[^}]*\"uuid\"\\s*:\\s*\"([^\"]+)\".*", replace: "$1" },
+
+        // Timestamps
+        { input: "creationTime", output: "finding_info.created_time", match: ".*", replace: "$0" },
+        { input: "time",         output: "finding_info.last_seen_time", match: ".*", replace: "$0" }
+      ]
+    },
+
+    // ============================================================
+    // 2. AI Analyst Incident (has "title", "summary", "incidentId")
+    // ============================================================
+    {
+      id: "dt_aianalyst_json",
+      attributes: {
+        finding_title: "Darktrace AI Analyst Incident",
+        severity_id: 4,
+        severity: "High"
+      },
+      format: "$=json{parse=json}$",
+      halt: true,
+      rewrites: [
+        // Title → model name (so Library Detections can match)
+        { input: "title",   output: "unmapped.model.then.name", match: ".*", replace: "AI Analyst / $0" },
+        { input: "title",   output: "model_name",               match: ".*", replace: "AI Analyst / $0" },
+        { input: "title",   output: "finding_title",            match: ".*", replace: "Darktrace AI Analyst: $0" },
+        { input: "summary", output: "finding_info.desc",        match: ".*", replace: "$0" },
+
+        // groupSeverity (0-100) → severity_id
+        { input: "groupSeverity", output: "severity_id", match: "^[0-1]?[0-9]$",       replace: "1" },  // 0-19 = Info
+        { input: "groupSeverity", output: "severity_id", match: "^[2-3][0-9]$",        replace: "2" },  // 20-39 = Low
+        { input: "groupSeverity", output: "severity_id", match: "^[4-5][0-9]$",        replace: "3" },  // 40-59 = Medium
+        { input: "groupSeverity", output: "severity_id", match: "^[6-7][0-9]$",        replace: "4" },  // 60-79 = High
+        { input: "groupSeverity", output: "severity_id", match: "^([8-9][0-9]|100)$",  replace: "5" },  // 80-100 = Critical
+
+        // First device IP/hostname from devices array (regex on raw message)
+        { input: "message", output: "src_ip",
+          match: ".*\"devices\"\\s*:\\s*\\[\\s*\\{[^}]*\"ip\"\\s*:\\s*\"([0-9.]+)\".*", replace: "$1" },
+        { input: "message", output: "src_hostname",
+          match: ".*\"devices\"\\s*:\\s*\\[\\s*\\{[^}]*\"hostname\"\\s*:\\s*\"([^\"]+)\".*", replace: "$1" },
+        { input: "message", output: "endpoint.name",
+          match: ".*\"devices\"\\s*:\\s*\\[\\s*\\{[^}]*\"hostname\"\\s*:\\s*\"([^\"]+)\".*", replace: "$1" },
+
+        // IDs
+        { input: "incidentId", output: "external_id", match: ".*", replace: "$0" }
+      ]
+    }
+  ]
+}

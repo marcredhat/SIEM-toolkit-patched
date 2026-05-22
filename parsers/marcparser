@@ -1,0 +1,59 @@
+{
+  attributes: {
+    "dataSource.vendor":   "pfSense",
+    "dataSource.name":     "pfSense Firewall",
+    "dataSource.category": "security"
+  },
+
+  patterns: {
+    ipv4:  "\\d+\\.\\d+\\.\\d+\\.\\d+",
+    ipv6:  "[0-9A-Fa-f:]+",
+    ipv46: "(\\d+\\.\\d+\\.\\d+\\.\\d+|[0-9A-Fa-f:]+)",
+    number: "\\d+"
+  },
+
+  formats: [
+    {
+      // ACCEPT TCP 4f48:...:55177 -> f7b0:...:10680 - Rule: 4891 - Bytes: 1234
+      id: "flow",
+      format:
+        "$pf_action$ $network_protocol$ " +
+        "$src_ip=ipv46$:$src_port=number$ -> " +
+        "$dst_ip=ipv46$:$dst_port=number$ - Rule: " +
+        "$fw_rule_id=number$ - Bytes: $bytes=number$",
+      halt: true
+    },
+    {
+      // INTRUSION DETECTED: DDoS from 92.191.154.186 - Blocked by rule 7936 - Severity: HIGH
+      id: "ids",
+      format:
+        "INTRUSION DETECTED: $attack_type$ from " +
+        "$src_ip=ipv4$ - Blocked by rule $fw_rule_id=number$ - Severity: $severity$",
+      halt: true
+    }
+  ],
+
+  mappings: {
+    version: 1,
+    mappings: [
+      {
+        predicate: "true",
+        transformations: [
+          { "rename": { "from": "src_ip",   "to": "src.ip.address" } },
+          { "rename": { "from": "dst_ip",   "to": "dst.ip.address" } },
+          { "rename": { "from": "src_port", "to": "src.port.number" } },
+          { "rename": { "from": "dst_port", "to": "dst.port.number" } },
+          { "rename": { "from": "network_protocol", "to": "network.protocol" } },
+          { "rename": { "from": "fw_rule_id",       "to": "unmapped.firewall.rule_id" } },
+          { "rename": { "from": "bytes",            "to": "network.bytes" } },
+          { "rename": { "from": "pf_action",        "to": "event.outcome" } },
+          { "rename": { "from": "severity",         "to": "severity" } },
+          { "rename": { "from": "attack_type",      "to": "unmapped.attack.type" } },
+
+          { "constant": { "field": "event.category", "value": "network" } },
+          { "constant": { "field": "class_name",     "value": "Network Activity" } }
+        ]
+      }
+    ]
+  }
+}

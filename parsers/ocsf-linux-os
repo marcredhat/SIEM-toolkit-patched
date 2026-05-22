@@ -1,0 +1,406 @@
+// SentinelOne AI SIEM Parser: Linux OS
+// OCSF Schema Version: 1.1.0
+// Maps Linux syslog/auth/audit logs to OCSF classes
+// Primary Classes: Authentication (3002), Process Activity (1007), Account Change (3001)
+
+{
+  "parserName": "LinuxOS-OCSF",
+  "version": "1.0.0",
+  "vendor": "Linux",
+  "product": "Linux OS",
+  "format": "syslog",
+  
+  "patterns": [
+    // SSH successful login
+    {
+      "pattern": "sshd\\[\\d+\\]:\\s+Accepted\\s+(\\w+)\\s+for\\s+(\\S+)\\s+from\\s+([\\d.]+)\\s+port\\s+(\\d+)",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        {"set": "category_uid", "value": "3"},
+        {"set": "category_name", "value": "Identity & Access Management"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Logon"},
+        {"set": "type_uid", "value": "300201"},
+        
+        // Metadata
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "OpenSSH"},
+        {"set": "metadata.product.vendor_name", "value": "Linux"},
+        {"regex": "^(\\w+\\s+\\d+\\s+[\\d:]+)\\s+(\\S+)", "group": 2, "to": "device.hostname"},
+        
+        // Time
+        {"regex": "^(\\w+\\s+\\d+\\s+[\\d:]+)", "group": 1, "to": "time"},
+        
+        // Auth method
+        {"group": 1, "to": "auth_protocol"},
+        
+        // User
+        {"group": 2, "to": "user.name"},
+        
+        // Source
+        {"group": 3, "to": "src_endpoint.ip"},
+        {"group": 4, "to": "src_endpoint.port"},
+        
+        // SSH key fingerprint
+        {"regex": "SHA256:(\\S+)", "group": 1, "to": "user.credential_uid"},
+        
+        // Status
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    },
+    
+    // SSH failed login
+    {
+      "pattern": "sshd\\[\\d+\\]:\\s+Failed\\s+(\\w+)\\s+for\\s+(invalid user\\s+)?(\\S+)\\s+from\\s+([\\d.]+)\\s+port\\s+(\\d+)",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Logon"},
+        {"set": "status_id", "value": "2"},
+        {"set": "status", "value": "Failure"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "OpenSSH"},
+        {"set": "metadata.product.vendor_name", "value": "Linux"},
+        
+        // Time
+        {"regex": "^(\\w+\\s+\\d+\\s+[\\d:]+)", "group": 1, "to": "time"},
+        
+        // Auth method
+        {"group": 1, "to": "auth_protocol"},
+        
+        // User
+        {"group": 3, "to": "user.name"},
+        {"set": "user.type", "value": "Invalid", "if": "invalid user"},
+        
+        // Source
+        {"group": 4, "to": "src_endpoint.ip"},
+        {"group": 5, "to": "src_endpoint.port"},
+        
+        // Severity
+        {"set": "severity_id", "value": "3"},
+        {"set": "severity", "value": "Medium"}
+      ]
+    },
+    
+    // Sudo command execution
+    {
+      "pattern": "sudo:\\s+(\\S+)\\s+:\\s+TTY=(\\S+)\\s+;\\s+PWD=(\\S+)\\s+;\\s+USER=(\\S+)\\s+;\\s+COMMAND=(.+)$",
+      "rewrites": [
+        {"set": "class_uid", "value": "1007"},
+        {"set": "class_name", "value": "Process Activity"},
+        {"set": "category_uid", "value": "1"},
+        {"set": "category_name", "value": "System Activity"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Launch"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "sudo"},
+        {"set": "metadata.product.vendor_name", "value": "Linux"},
+        
+        // Time
+        {"regex": "^(\\w+\\s+\\d+\\s+[\\d:]+)", "group": 1, "to": "time"},
+        
+        // Actor
+        {"group": 1, "to": "actor.user.name"},
+        {"group": 2, "to": "actor.session.terminal"},
+        {"group": 3, "to": "process.cwd"},
+        
+        // Target user (run as)
+        {"group": 4, "to": "user.name"},
+        
+        // Command
+        {"group": 5, "to": "process.cmd_line"},
+        
+        // Privilege escalation indicator
+        {"set": "is_privileged", "value": "true"},
+        
+        // Status
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    },
+    
+    // Sudo denied
+    {
+      "pattern": "sudo:\\s+(\\S+)\\s+:\\s+user NOT in sudoers",
+      "rewrites": [
+        {"set": "class_uid", "value": "3003"},
+        {"set": "class_name", "value": "Authorization"},
+        {"set": "activity_id", "value": "2"},
+        {"set": "activity_name", "value": "Deny"},
+        {"set": "status_id", "value": "2"},
+        {"set": "status", "value": "Failure"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "sudo"},
+        {"set": "metadata.product.vendor_name", "value": "Linux"},
+        
+        // Time
+        {"regex": "^(\\w+\\s+\\d+\\s+[\\d:]+)", "group": 1, "to": "time"},
+        
+        // User
+        {"group": 1, "to": "actor.user.name"},
+        
+        // Extract command attempted
+        {"regex": "COMMAND=(.+)$", "group": 1, "to": "process.cmd_line"},
+        
+        // Severity
+        {"set": "severity_id", "value": "4"},
+        {"set": "severity", "value": "High"}
+      ]
+    },
+    
+    // User creation (useradd)
+    {
+      "pattern": "useradd\\[\\d+\\]:\\s+new user:\\s+name=(\\S+),\\s+UID=(\\d+),\\s+GID=(\\d+),\\s+home=(\\S+),\\s+shell=(\\S+)",
+      "rewrites": [
+        {"set": "class_uid", "value": "3001"},
+        {"set": "class_name", "value": "Account Change"},
+        {"set": "category_uid", "value": "3"},
+        {"set": "category_name", "value": "Identity & Access Management"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Create"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "useradd"},
+        {"set": "metadata.product.vendor_name", "value": "Linux"},
+        
+        // Time
+        {"regex": "^(\\w+\\s+\\d+\\s+[\\d:]+)", "group": 1, "to": "time"},
+        
+        // New user
+        {"group": 1, "to": "user.name"},
+        {"group": 2, "to": "user.uid"},
+        {"group": 3, "to": "user.gid"},
+        {"group": 4, "to": "user.home"},
+        {"group": 5, "to": "user.shell"},
+        
+        // Status
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    },
+    
+    // User modification (usermod)
+    {
+      "pattern": "usermod\\[\\d+\\]:\\s+add\\s+'(\\S+)'\\s+to\\s+group\\s+'(\\S+)'",
+      "rewrites": [
+        {"set": "class_uid", "value": "3004"},
+        {"set": "class_name", "value": "Group Membership"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Add"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "usermod"},
+        {"set": "metadata.product.vendor_name", "value": "Linux"},
+        
+        // Time
+        {"regex": "^(\\w+\\s+\\d+\\s+[\\d:]+)", "group": 1, "to": "time"},
+        
+        // User and group
+        {"group": 1, "to": "user.name"},
+        {"group": 2, "to": "group.name"},
+        
+        // Severity for privileged groups
+        {"set": "severity_id", "value": "4", "if": "wheel|sudo|root|admin"},
+        {"set": "severity", "value": "High", "if": "wheel|sudo|root|admin"},
+        
+        // Status
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    },
+    
+    // UFW firewall block
+    {
+      "pattern": "kernel:\\s+\\[UFW BLOCK\\]\\s+IN=(\\S*)\\s+OUT=(\\S*).*SRC=([\\d.]+)\\s+DST=([\\d.]+).*PROTO=(\\w+)\\s+SPT=(\\d+)\\s+DPT=(\\d+)",
+      "rewrites": [
+        {"set": "class_uid", "value": "4001"},
+        {"set": "class_name", "value": "Network Activity"},
+        {"set": "category_uid", "value": "4"},
+        {"set": "category_name", "value": "Network Activity"},
+        {"set": "activity_id", "value": "2"},
+        {"set": "activity_name", "value": "Deny"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "UFW"},
+        {"set": "metadata.product.vendor_name", "value": "Linux"},
+        
+        // Time
+        {"regex": "^(\\w+\\s+\\d+\\s+[\\d:]+)", "group": 1, "to": "time"},
+        
+        // Interfaces
+        {"group": 1, "to": "src_endpoint.interface_name"},
+        {"group": 2, "to": "dst_endpoint.interface_name"},
+        
+        // Endpoints
+        {"group": 3, "to": "src_endpoint.ip"},
+        {"group": 4, "to": "dst_endpoint.ip"},
+        {"group": 6, "to": "src_endpoint.port"},
+        {"group": 7, "to": "dst_endpoint.port"},
+        
+        // Protocol
+        {"group": 5, "to": "connection_info.protocol_name"},
+        
+        // Status
+        {"set": "status_id", "value": "2"},
+        {"set": "status", "value": "Failure"}
+      ]
+    },
+    
+    // Audit EXECVE (command execution)
+    {
+      "pattern": "auditd\\[\\d+\\]:\\s+EXECVE\\s+argc=(\\d+)\\s+(.+)$",
+      "rewrites": [
+        {"set": "class_uid", "value": "1007"},
+        {"set": "class_name", "value": "Process Activity"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Launch"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "auditd"},
+        {"set": "metadata.product.vendor_name", "value": "Linux"},
+        
+        // Time
+        {"regex": "^(\\w+\\s+\\d+\\s+[\\d:]+)", "group": 1, "to": "time"},
+        
+        // Arguments
+        {"group": 1, "to": "process.argc"},
+        {"group": 2, "to": "process.cmd_line", "transform": "parseAuditArgs"},
+        
+        // Status
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    },
+    
+    // Systemd service start
+    {
+      "pattern": "systemd\\[1\\]:\\s+Started\\s+(.+?)(?:\\s+-\\s+(.+))?\\.?$",
+      "rewrites": [
+        {"set": "class_uid", "value": "1006"},
+        {"set": "class_name", "value": "Service Activity"},
+        {"set": "category_uid", "value": "1"},
+        {"set": "category_name", "value": "System Activity"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Start"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "systemd"},
+        {"set": "metadata.product.vendor_name", "value": "Linux"},
+        
+        // Time
+        {"regex": "^(\\w+\\s+\\d+\\s+[\\d:]+)", "group": 1, "to": "time"},
+        
+        // Service
+        {"group": 1, "to": "service.name"},
+        {"group": 2, "to": "service.desc"},
+        
+        // Status
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    },
+    
+    // Cron job execution
+    {
+      "pattern": "cron\\[\\d+\\]:\\s+\\((\\S+)\\)\\s+CMD\\s+\\((.+)\\)$",
+      "rewrites": [
+        {"set": "class_uid", "value": "1007"},
+        {"set": "class_name", "value": "Process Activity"},
+        {"set": "activity_id", "value": "1"},
+        {"set": "activity_name", "value": "Launch"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "cron"},
+        {"set": "metadata.product.vendor_name", "value": "Linux"},
+        
+        // Time
+        {"regex": "^(\\w+\\s+\\d+\\s+[\\d:]+)", "group": 1, "to": "time"},
+        
+        // User
+        {"group": 1, "to": "actor.user.name"},
+        
+        // Command
+        {"group": 2, "to": "process.cmd_line"},
+        
+        // Scheduled task indicator
+        {"set": "is_scheduled", "value": "true"},
+        
+        // Status
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    },
+    
+    // Password change
+    {
+      "pattern": "passwd\\[\\d+\\]:\\s+password changed for\\s+(\\S+)\\s+by\\s+(\\S+)",
+      "rewrites": [
+        {"set": "class_uid", "value": "3001"},
+        {"set": "class_name", "value": "Account Change"},
+        {"set": "activity_id", "value": "3"},
+        {"set": "activity_name", "value": "Password Change"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "passwd"},
+        {"set": "metadata.product.vendor_name", "value": "Linux"},
+        
+        // Time
+        {"regex": "^(\\w+\\s+\\d+\\s+[\\d:]+)", "group": 1, "to": "time"},
+        
+        // Target user
+        {"group": 1, "to": "user.name"},
+        
+        // Actor
+        {"group": 2, "to": "actor.user.name"},
+        
+        // Status
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    },
+    
+    // SSH disconnect
+    {
+      "pattern": "sshd\\[\\d+\\]:\\s+Received disconnect from\\s+([\\d.]+)\\s+port\\s+(\\d+):(\\d+):\\s+(.+)$",
+      "rewrites": [
+        {"set": "class_uid", "value": "3002"},
+        {"set": "class_name", "value": "Authentication"},
+        {"set": "activity_id", "value": "2"},
+        {"set": "activity_name", "value": "Logoff"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "OpenSSH"},
+        {"set": "metadata.product.vendor_name", "value": "Linux"},
+        
+        // Time
+        {"regex": "^(\\w+\\s+\\d+\\s+[\\d:]+)", "group": 1, "to": "time"},
+        
+        // Source
+        {"group": 1, "to": "src_endpoint.ip"},
+        {"group": 2, "to": "src_endpoint.port"},
+        
+        // Disconnect code and reason
+        {"group": 3, "to": "status_code"},
+        {"group": 4, "to": "status_detail"},
+        
+        // Status
+        {"set": "status_id", "value": "1"},
+        {"set": "status", "value": "Success"}
+      ]
+    }
+  ],
+  
+  "transforms": {
+    "parseAuditArgs": {
+      "description": "Parse audit EXECVE arguments a0=\"/bin/bash\" a1=\"-c\" to command line",
+      "regex": "a\\d+=\"([^\"]+)\"",
+      "join": " "
+    }
+  }
+}

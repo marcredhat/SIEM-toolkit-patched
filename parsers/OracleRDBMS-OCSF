@@ -1,0 +1,62 @@
+{
+  // Oracle RDBMS audit trail parser — OCSF v1.3.0
+  attributes: {
+    "metadata.version":             "1.3.0",
+    "metadata.product.vendor_name": "Oracle",
+    "metadata.product.name":        "Database",
+    "Category":               "database",
+    "dataSource.vendor":      "Oracle",
+    "dataSource.name":        "Oracle Database",
+    "dataSource.category":    "database",
+    "category_uid":           4,
+    "category_name":          "Network Activity",
+    "class_uid":              4001,
+    "class_name":             "Database Activity",
+    "activity_id":            1,
+    "type_uid":               400101,
+    "status_id":              1,
+    "severity_id":            1
+  },
+
+  patterns: {
+    word: "\\S+",
+    rest: ".*"
+  },
+
+  formats: [
+    {
+      id: "oracle_audit",
+      attributes: {
+        class_uid: 4001, class_name: "Database Activity",
+        type_uid: 400101
+      },
+      format: "Audit trail: ACTION: $action_id=word$ TIMESTAMP: $ts=word$ $tz=word$ SESSIONID: $session_id=word$ ENTRYID: $entry_id=word$ STATEMENT: $stmt_id=word$ USERID: $user_name=word$ USERHOST: $user_host=word$ TERMINAL: $terminal=word$ ACTION_NAME: $activity_name=word$ RETURNCODE: $return_code=word$ $rest=rest$",
+      halt: true,
+      rewrites: [
+        { input: "user_name", output: "actor.user.name", match: ".*", replace: "$0" },
+        { input: "user_host", output: "device.hostname", match: ".*", replace: "$0" },
+        { input: "session_id", output: "actor.session.uid", match: ".*", replace: "$0" },
+
+        // Failed (return_code != 0) → Detection Finding
+        { input: "return_code", output: "class_uid",     match: "^[1-9].*", replace: "2004" },
+        { input: "return_code", output: "class_name",    match: "^[1-9].*", replace: "Detection Finding" },
+        { input: "return_code", output: "category_uid",  match: "^[1-9].*", replace: "2" },
+        { input: "return_code", output: "type_uid",      match: "^[1-9].*", replace: "200401" },
+        { input: "return_code", output: "finding_title", match: "^[1-9].*", replace: "Oracle Database Failed Operation" },
+        { input: "return_code", output: "severity_id",   match: "^[1-9].*", replace: "4" },
+        { input: "return_code", output: "severity",      match: "^[1-9].*", replace: "High" },
+        { input: "return_code", output: "status_id",     match: "^[1-9].*", replace: "2" },
+        { input: "return_code", output: "status",        match: "^[1-9].*", replace: "Failure" },
+
+        // Privilege grants → Detection Finding
+        { input: "activity_name", output: "class_uid",     match: "^GRANT$", replace: "2004" },
+        { input: "activity_name", output: "class_name",    match: "^GRANT$", replace: "Detection Finding" },
+        { input: "activity_name", output: "category_uid",  match: "^GRANT$", replace: "2" },
+        { input: "activity_name", output: "type_uid",      match: "^GRANT$", replace: "200401" },
+        { input: "activity_name", output: "finding_title", match: "^GRANT$", replace: "Oracle Privilege Grant" },
+        { input: "activity_name", output: "severity_id",   match: "^GRANT$", replace: "4" },
+        { input: "activity_name", output: "severity",      match: "^GRANT$", replace: "High" }
+      ]
+    }
+  ]
+}

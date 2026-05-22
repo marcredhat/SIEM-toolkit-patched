@@ -1,0 +1,84 @@
+{
+  "duration": "24h",
+  "description": "Cross-source security posture from OCSF-normalized events",
+  "graphs": [
+    {
+      "title": "Events by Source",
+      "graphStyle": "donut",
+      "maxPieSlices": 15,
+      "query": "serverHost = * | group count() by serverHost | sort -count | limit 15",
+      "layout": {
+        "w": 20,
+        "h": 14,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "title": "Event Volume Over Time",
+      "graphStyle": "stacked_bar",
+      "xAxis": "time",
+      "query": "serverHost = * | group count() by timestamp=timebucket('1h'), serverHost | transpose serverHost on timestamp",
+      "layout": {
+        "w": 40,
+        "h": 14,
+        "x": 20,
+        "y": 0
+      }
+    },
+    {
+      "title": "Top Source IPs",
+      "graphStyle": "table",
+      "query": "src_ip = * | group hits=count() by src_ip | sort -hits | limit 15",
+      "layout": {
+        "w": 20,
+        "h": 14,
+        "x": 0,
+        "y": 14
+      }
+    },
+    {
+      "title": "Top Active Users",
+      "graphStyle": "table",
+      "query": "user_name = * | group hits=count() by user_name | sort -hits | limit 15",
+      "layout": {
+        "w": 20,
+        "h": 14,
+        "x": 20,
+        "y": 14
+      }
+    },
+    {
+      "title": "Authentication Failures",
+      "graphStyle": "number",
+      "query": "message contains 'Failed password' or message contains 'authentication failure' | group count() | limit 1",
+      "layout": {
+        "w": 10,
+        "h": 7,
+        "x": 40,
+        "y": 14
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0",
+        "suffix": " failures"
+      }
+    },
+    {
+      "title": "Firewall Denies",
+      "graphStyle": "number",
+      "query": "action = 'deny' or action = 'block' or action = 'drop' | group count() | limit 1",
+      "layout": {
+        "w": 10,
+        "h": 7,
+        "x": 50,
+        "y": 14
+      },
+      "options": {
+        "format": "auto",
+        "precision": "0",
+        "suffix": " blocked"
+      }
+    }
+  ]
+}

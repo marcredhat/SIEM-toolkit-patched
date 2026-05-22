@@ -1,0 +1,106 @@
+{
+  "alerts": [
+    {
+      "trigger": "class_uid='2004' AND severity_id='5' | group n=count() by serverHost, finding_title | filter n >= 1",
+      "alertTime": 300,
+      "renotifyPeriodMinutes": 60,
+      "description": "[Critical] Critical OCSF Detection Findings (any source) \u2014 Fires when any data source reports a Detection Finding with severity_id=5 (Critical). Catches HANA Mass Exfil, SQL Injection, Linux reverse shells, Windows audit clearing, F5 WAF blocks, Palo Alto threats."
+    },
+    {
+      "trigger": "class_uid='2004' AND severity_id='4' | group n=count() by serverHost, finding_title | filter n >= 1",
+      "alertTime": 300,
+      "renotifyPeriodMinutes": 120,
+      "description": "[High] High-Severity Detection Findings \u2014 All HIGH severity OCSF findings \u2014 SSH brute force, sudo not in sudoers, F5 auth failures, Windows logon failures, Entra ID risky sign-ins."
+    },
+    {
+      "trigger": "serverHost='linux-ocsf' | parse 'Failed password for $f_user$ from $f_ip$' | parse 'Accepted password for $a_user$ from $a_ip$' | group fails=count(f_user), success=count(a_user) by serverHost, f_ip | filter fails >= 3 and success >= 1",
+      "alertTime": 600,
+      "renotifyPeriodMinutes": 60,
+      "description": "[Critical] Linux SSH Brute-Force Then Successful Logon (Correlation) \u2014 Detects 3+ failed SSH logins followed by a successful logon from the same source IP \u2014 classic credential stuffing kill chain."
+    },
+    {
+      "trigger": "class_uid='2004' AND src_ip != null | group sources=count() by src_ip | filter sources >= 5",
+      "alertTime": 3600,
+      "renotifyPeriodMinutes": 60,
+      "description": "[Critical] Multi-Source Coordinated Attack (Correlation) \u2014 Same source IP triggers Detection Findings across 2+ different data sources within 1h \u2014 indicates coordinated multi-stage attack (e.g., port scan + brute force + exfil)."
+    },
+    {
+      "trigger": "serverHost='hana-ocsf' AND class_uid='2004' AND (finding_title contains 'SQL Injection' OR finding_title contains 'Mass Data Extraction')",
+      "alertTime": 300,
+      "renotifyPeriodMinutes": 30,
+      "description": "[Critical] HANA Database SQL Injection or Mass Exfiltration \u2014 Critical SAP HANA detection: SQL injection patterns OR rows_affected > 1000 indicating data exfiltration."
+    },
+    {
+      "trigger": "(serverHost='bind-ocsf' OR serverHost='msdns-ocsf') AND class_uid='2004' | group n=count() by finding_title | filter n >= 1",
+      "alertTime": 600,
+      "renotifyPeriodMinutes": 60,
+      "description": "[High] DNS Suspicious Activity (BIND or Microsoft DNS) \u2014 BIND or Microsoft DNS detected suspicious query \u2014 security warnings, AXFR zone transfers, base64 tunneling, or dynamic DNS."
+    },
+    {
+      "trigger": "serverHost='entra-ocsf' AND class_uid='2004' | group n=count() by finding_title | filter n >= 1",
+      "alertTime": 300,
+      "renotifyPeriodMinutes": 30,
+      "description": "[High] Cloud Identity Risky Sign-In \u2014 Microsoft Entra ID flagged a sign-in failure or risky activity (auth failure, high-risk, Tor exit node, etc.)."
+    },
+    {
+      "trigger": "serverHost='f5ltm-ocsf' AND class_uid='2004' AND (finding_title contains 'WAF' OR finding_title contains 'ASM')",
+      "alertTime": 300,
+      "renotifyPeriodMinutes": 30,
+      "description": "[Critical] Web Application Attack (F5 WAF) \u2014 F5 BIG-IP WAF blocked SQL injection, XSS, or other web attack pattern."
+    },
+    {
+      "trigger": "serverHost='paloalto-ocsf' AND class_uid='2004'",
+      "alertTime": 300,
+      "renotifyPeriodMinutes": 30,
+      "description": "[Critical] Palo Alto Threat / C2 Detection \u2014 Palo Alto IPS/threat engine detected vulnerability exploit, spyware/C2, or malware."
+    },
+    {
+      "trigger": "serverHost='windows-ocsf' AND class_uid='2004' | group n=count() by finding_title | filter n >= 1",
+      "alertTime": 300,
+      "renotifyPeriodMinutes": 30,
+      "description": "[High] Windows Security Detection Finding \u2014 Any Windows Security Detection Finding \u2014 failed logons (4625), new accounts (4720), privileged group changes (4732), or audit log clearing (1102)."
+    },
+    {
+      "trigger": "serverHost='windows-ocsf' AND class_uid='2004' AND (finding_title contains '4720' OR finding_title contains '4732')",
+      "alertTime": 600,
+      "renotifyPeriodMinutes": 60,
+      "description": "[High] Windows New User Account Or Privilege Escalation \u2014 EventID 4720 (new user) or 4732 (added to privileged group) \u2014 persistence + privesc."
+    },
+    {
+      "trigger": "class_uid='3002' AND status_id='2' | group attempts=count() by user_name | filter attempts >= 10",
+      "alertTime": 300,
+      "renotifyPeriodMinutes": 30,
+      "description": "[High] Authentication Failure Burst (Cross-Source) \u2014 10+ authentication failures (class_uid=3002 status=Failure) across all IAM sources within 5 min \u2014 likely brute force."
+    },
+    {
+      "trigger": "serverHost='linux-ocsf' AND class_uid='2004' AND (finding_title contains 'Reverse Shell' OR finding_title contains 'Credential Dumping')",
+      "alertTime": 300,
+      "renotifyPeriodMinutes": 30,
+      "description": "[Critical] Linux Reverse Shell or Credential Dumping Tool \u2014 Linux process activity detected mimikatz / hashdump / kerbrute / python socket reverse shell."
+    },
+    {
+      "trigger": "(serverHost='fortigate-ocsf' OR serverHost='checkpoint-ocsf') AND class_uid='2004' | group n=count() by serverHost, src_ip | filter n >= 10",
+      "alertTime": 600,
+      "renotifyPeriodMinutes": 60,
+      "description": "[High] Network Firewall Deny / Block (Spike) \u2014 FortiGate or Check Point firewall denied 10+ connections \u2014 likely port scan, lateral movement attempt, or C2 callback."
+    },
+    {
+      "trigger": "serverHost='darktrace-ocsf' AND class_uid='2004' AND finding_title contains 'AI Analyst' | group n=count() by finding_title | filter n >= 1",
+      "alertTime": 300,
+      "renotifyPeriodMinutes": 30,
+      "description": "[Critical] Darktrace AI Analyst Incident \u2014 Darktrace AI Analyst raised an incident (lateral movement, data exfil, suspicious SaaS activity, etc.) \u2014 top-priority NDR alert."
+    },
+    {
+      "trigger": "serverHost='darktrace-ocsf' AND class_uid='2004' AND finding_title contains 'Antigena' | group n=count() by finding_title | filter n >= 1",
+      "alertTime": 300,
+      "renotifyPeriodMinutes": 60,
+      "description": "[High] Darktrace Antigena Autonomous Response Triggered \u2014 Darktrace Antigena autonomously blocked traffic \u2014 confirms a high-confidence threat that the system already mitigated."
+    },
+    {
+      "trigger": "serverHost='darktrace-ocsf' AND class_uid='2004' AND finding_title contains 'Model Breach' | group n=count() by finding_title | filter n >= 1",
+      "alertTime": 600,
+      "renotifyPeriodMinutes": 60,
+      "description": "[High] Darktrace Model Breach High Score (>=80) \u2014 Darktrace Model Breach with anomaly score >=80 (out of 100) \u2014 high-confidence behavioural anomaly worth investigating."
+    }
+  ]
+}

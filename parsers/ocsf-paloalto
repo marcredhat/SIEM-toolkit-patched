@@ -1,0 +1,158 @@
+// SentinelOne AI SIEM Parser: Palo Alto PA Series
+// OCSF Schema Version: 1.1.0
+// Maps Palo Alto CSV logs to OCSF classes
+// Primary Classes: Network Activity (4001), Detection Finding (2004), Security Finding (2001)
+
+{
+  "parserName": "PaloAlto-OCSF",
+  "version": "1.0.0",
+  "vendor": "Palo Alto Networks",
+  "product": "PA Series Firewall",
+  "format": "csv",
+  
+  "patterns": [
+    // TRAFFIC logs
+    {
+      "pattern": ",TRAFFIC,",
+      "rewrites": [
+        {"set": "class_uid", "value": "4001"},
+        {"set": "class_name", "value": "Network Activity"},
+        {"set": "category_uid", "value": "4"},
+        {"set": "category_name", "value": "Network Activity"},
+        
+        // Metadata
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Palo Alto Firewall"},
+        {"set": "metadata.product.vendor_name", "value": "Palo Alto Networks"},
+        {"csv": 1, "to": "metadata.product.version"},
+        {"csv": 2, "to": "device.uid"},
+        {"csv": 6, "to": "time"},
+        
+        // Source endpoint
+        {"csv": 7, "to": "src_endpoint.ip"},
+        {"csv": 8, "to": "dst_endpoint.ip"},
+        {"csv": 9, "to": "proxy.ip"},
+        {"csv": 10, "to": "proxy.dst_ip"},
+        {"csv": 24, "to": "src_endpoint.port"},
+        {"csv": 25, "to": "dst_endpoint.port"},
+        
+        // User
+        {"csv": 12, "to": "actor.user.name"},
+        
+        // Application
+        {"csv": 14, "to": "app_name"},
+        
+        // Zones
+        {"csv": 16, "to": "src_endpoint.zone"},
+        {"csv": 17, "to": "dst_endpoint.zone"},
+        
+        // Interfaces
+        {"csv": 18, "to": "src_endpoint.interface_name"},
+        {"csv": 19, "to": "dst_endpoint.interface_name"},
+        
+        // Session
+        {"csv": 22, "to": "connection_info.session.uid"},
+        
+        // Protocol
+        {"csv": 29, "to": "connection_info.protocol_name"},
+        
+        // Action
+        {"csv": 30, "to": "activity_name"},
+        {"lookup": "activity_name", "map": {"allow": 1, "deny": 2, "drop": 5, "reset-both": 6}, "to": "activity_id"},
+        
+        // Traffic stats
+        {"csv": 31, "to": "traffic.bytes"},
+        {"csv": 32, "to": "traffic.bytes_out"},
+        {"csv": 33, "to": "traffic.bytes_in"},
+        {"csv": 34, "to": "traffic.packets"},
+        
+        // Duration
+        {"csv": 36, "to": "connection_info.session.duration"},
+        
+        // Policy
+        {"csv": 11, "to": "policy.name"},
+        
+        // Status
+        {"set": "status_id", "value": "1", "if": "allow"},
+        {"set": "status", "value": "Success", "if": "allow"}
+      ]
+    },
+    
+    // THREAT logs (vulnerability, spyware, virus, wildfire)
+    {
+      "pattern": ",THREAT,",
+      "rewrites": [
+        {"set": "class_uid", "value": "2004"},
+        {"set": "class_name", "value": "Detection Finding"},
+        {"set": "category_uid", "value": "2"},
+        {"set": "category_name", "value": "Findings"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Palo Alto Threat Prevention"},
+        {"set": "metadata.product.vendor_name", "value": "Palo Alto Networks"},
+        {"csv": 2, "to": "device.uid"},
+        {"csv": 6, "to": "time"},
+        
+        // Threat subtype
+        {"csv": 4, "to": "finding_info.type_uid"},
+        
+        // Endpoints
+        {"csv": 7, "to": "src_endpoint.ip"},
+        {"csv": 8, "to": "dst_endpoint.ip"},
+        {"csv": 24, "to": "src_endpoint.port"},
+        {"csv": 25, "to": "dst_endpoint.port"},
+        
+        // User
+        {"csv": 12, "to": "actor.user.name"},
+        
+        // Threat info
+        {"csv": 31, "to": "finding_info.title"},
+        {"csv": 32, "to": "finding_info.desc"},
+        {"csv": 33, "to": "severity"},
+        {"lookup": "severity", "map": {"critical": 5, "high": 4, "medium": 3, "low": 2, "informational": 1}, "to": "severity_id"},
+        
+        // Direction
+        {"csv": 34, "to": "connection_info.direction"},
+        
+        // Threat ID
+        {"csv": 35, "to": "finding_info.uid"},
+        
+        // Action
+        {"csv": 30, "to": "activity_name"},
+        {"lookup": "activity_name", "map": {"alert": 1, "block": 2, "drop": 2, "reset-both": 2, "reset-client": 2, "reset-server": 2}, "to": "activity_id"},
+        
+        // File info (for wildfire)
+        {"csv": 42, "to": "file.name"},
+        {"csv": 43, "to": "file.type_id"},
+        {"csv": 46, "to": "file.hashes.sha256"},
+        {"csv": 47, "to": "malware.classification.name"}
+      ]
+    },
+    
+    // SYSTEM logs
+    {
+      "pattern": ",SYSTEM,",
+      "rewrites": [
+        {"set": "class_uid", "value": "6002"},
+        {"set": "class_name", "value": "API Activity"},
+        {"set": "category_uid", "value": "6"},
+        {"set": "category_name", "value": "Application Activity"},
+        
+        {"set": "metadata.version", "value": "1.1.0"},
+        {"set": "metadata.product.name", "value": "Palo Alto System"},
+        {"set": "metadata.product.vendor_name", "value": "Palo Alto Networks"},
+        {"csv": 2, "to": "device.uid"},
+        {"csv": 6, "to": "time"},
+        
+        // System event type
+        {"csv": 4, "to": "activity_name"},
+        
+        // Severity
+        {"csv": 33, "to": "severity"},
+        
+        // Message
+        {"csv": 31, "to": "message"}
+      ]
+    }
+  ]
+}

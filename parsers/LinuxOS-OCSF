@@ -1,0 +1,152 @@
+{
+  // Linux syslog/auditd parser — OCSF v1.3.0
+  attributes: {
+    "metadata.version":             "1.3.0",
+    "metadata.product.vendor_name": "Linux",
+    "metadata.product.name":        "Linux OS",
+    "metadata.log_provider":        "syslog",
+    "Category":               "host",
+    "dataSource.vendor":      "Linux",
+    "dataSource.name":        "Linux OS",
+    "dataSource.category":    "host",
+    "category_uid":           1,
+    "category_name":          "System Activity",
+    "class_uid":              1001,
+    "class_name":             "File System Activity",
+    "activity_id":            0,
+    "activity_name":          "Unknown",
+    "type_uid":               100100,
+    "status_id":              1,
+    "status":                 "Success",
+    "severity_id":            1,
+    "severity":               "Informational"
+  },
+
+  patterns: {
+    ipv4:   "\\d+\\.\\d+\\.\\d+\\.\\d+",
+    word:   "\\S+",
+    rest:   ".*",
+    creds:  "(mimikatz|hashdump|secretsdump|kerbrute)",
+    revshell: ".*socket\\.socket.*"
+  },
+
+  formats: [
+    // SSH failed authentication
+    {
+      id: "ssh_failed",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, category_name: "Findings",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 200401,
+        finding_title: "Linux SSH Authentication Failure",
+        severity_id: 4, severity: "High",
+        disposition_id: 2, disposition: "Blocked"
+      },
+      format: ".*Failed password for $user_name=word$ from $src_ip=ipv4$ port $src_port=word$.*",
+      halt: true
+    },
+
+    // SSH successful authentication
+    {
+      id: "ssh_success",
+      attributes: {
+        class_uid: 3002, class_name: "Authentication",
+        category_uid: 3, category_name: "IAM",
+        activity_id: 1, activity_name: "Logon",
+        type_uid: 300201,
+        status_id: 1, status: "Success"
+      },
+      format: ".*Accepted password for $user_name=word$ from $src_ip=ipv4$ port $src_port=word$.*",
+      halt: true
+    },
+
+    // sudo NOT in sudoers (priv-esc attempt)
+    {
+      id: "sudo_not_in_sudoers",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, category_name: "Findings",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 200401,
+        finding_title: "Linux Sudo Not In Sudoers",
+        severity_id: 5, severity: "Critical",
+        disposition_id: 2, disposition: "Blocked"
+      },
+      format: ".*sudo: $user_name=word$ : user NOT in sudoers ; TTY=$tty=word$ ; PWD=$pwd=word$ ; USER=$target_user=word$ ; COMMAND=$process_cmd_line=rest$",
+      halt: true
+    },
+
+    // useradd — new user account created
+    {
+      id: "useradd",
+      attributes: {
+        class_uid: 3001, class_name: "Account Change",
+        category_uid: 3, category_name: "IAM",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 300101,
+        finding_title: "Linux New User Account Created",
+        severity_id: 4, severity: "High"
+      },
+      format: ".*useradd\\[$pid=word$\\]: new user: name=$new_user=word$, UID=$uid=word$, GID=$gid=word$.*",
+      halt: true
+    },
+
+    // Mimikatz / credential dumping signatures
+    {
+      id: "credential_dump",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, category_name: "Findings",
+        type_uid: 200401,
+        finding_title: "Linux Credential Dumping Tool",
+        severity_id: 5, severity: "Critical",
+        disposition_id: 2, disposition: "Blocked"
+      },
+      format: ".*$tool=creds$.*",
+      halt: true
+    },
+
+    // Reverse shell (python -c socket)
+    {
+      id: "reverse_shell",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, category_name: "Findings",
+        type_uid: 200401,
+        finding_title: "Linux Reverse Shell Execution",
+        severity_id: 5, severity: "Critical",
+        disposition_id: 2, disposition: "Blocked"
+      },
+      format: ".*python$ver=word$ -c $cmd=revshell$.*",
+      halt: true
+    },
+
+    // Generic auditd EXECVE
+    {
+      id: "auditd_execve",
+      attributes: {
+        class_uid: 1007, class_name: "Process Activity",
+        category_uid: 1, category_name: "System Activity",
+        activity_id: 1, activity_name: "Launch",
+        type_uid: 100701
+      },
+      format: ".*auditd\\[$pid=word$\\]: EXECVE argc=$argc=word$ a0=\"$process_name=word$\" $cmdline=rest$",
+      halt: true
+    },
+
+    // Cron job executed (suspicious if from /tmp/.hidden)
+    {
+      id: "cron_suspicious",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, category_name: "Findings",
+        type_uid: 200401,
+        finding_title: "Linux Suspicious Cron Job",
+        severity_id: 4, severity: "High"
+      },
+      format: ".*cron\\[$pid=word$\\]: \\($cron_user=word$\\) CMD \\($cron_cmd=rest$\\)",
+      halt: true
+    }
+  ]
+}

@@ -1,0 +1,385 @@
+{
+  attributes: {
+    "metadata.version":    "3.0.0",
+    "dataSource.vendor":   "Check Point",
+    "dataSource.name":     "Check Point Firewall",
+    "dataSource.category": "security",
+    "metadata.product.vendor_name": "Check Point",
+    "metadata.product.name":        "Next Generation Firewall",
+    "metadata.log_provider":        "syslog",
+    "severity_id": 1,
+    "severity": "Informational"
+  },
+
+  patterns: {
+    ip:        "\\d+\\.\\d+\\.\\d+\\.\\d+",
+    num:       "\\d+",
+    word:      "[\\w-]+",
+    qval:      "[^;\"]+",
+    uuid:      "\\{[^}]+\\}",
+    rest:      ".*"
+  },
+
+  formats: [
+    // ═══════════════════════════════════════════════════════════════════════════
+    // PIPE-DELIMITED: time=...|action=...|src=...|dst=...
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    // PIPE - Firewall Accept
+    {
+      id: "cp_pipe_accept",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 6, activity_name: "Traffic",
+        type_uid: 400106,
+        disposition_id: 1, disposition: "Allowed"
+      },
+      format: "time=$time_epoch=num$[|]hostname=$cp_hostname=word$[|]product=$cp_product=word$[|]layer_name=$layer_name=word$[|]action=Accept[|]rule_uid=$rule_uid=qval$[|]ifdir=$iface_dir=word$[|]ifname=$iface_name=word$[|]loguid=$log_uid=uuid$[|]origin=$origin_ip=ip$[|]src=$src_ip=ip$[|]dst=$dst_ip=ip$[|]proto=$proto_num=num$[|]s_port=$src_port=num$[|]service=$dst_port=num$.*",
+      halt: true
+    },
+
+    // PIPE - Firewall Drop
+    {
+      id: "cp_pipe_drop",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, category_name: "Findings",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 200401,
+        disposition_id: 2, disposition: "Blocked",
+        severity_id: 3, severity: "Medium",
+        "finding_info.title": "Check Point Firewall Block",
+        confidence_id: 3, confidence: "High"
+      },
+      format: "time=$time_epoch=num$[|]hostname=$cp_hostname=word$[|]product=$cp_product=word$.*action=Drop.*src=$src_ip=ip$[|]dst=$dst_ip=ip$[|]proto=$proto_num=num$.*",
+      halt: true
+    },
+
+    // PIPE - Generic firewall fallback (any pipe format with src/dst)
+    {
+      id: "cp_pipe_fw",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 6, activity_name: "Traffic",
+        type_uid: 400106
+      },
+      format: "time=$time_epoch=num$[|].*src=$src_ip=ip$[|]dst=$dst_ip=ip$.*",
+      halt: true
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // SEMICOLON FORMAT: [field:"value"; ...]
+    // Fields appear in alphabetical order in CP Log Exporter
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    // IDENTITY AWARENESS - Auth Success (no dst field, must precede generic Accept)
+    {
+      id: "cp_auth_ok",
+      attributes: {
+        class_uid: 3002, class_name: "Authentication",
+        category_uid: 3, category_name: "Identity & Access Management",
+        activity_id: 1, activity_name: "Logon",
+        type_uid: 300201,
+        status_id: 1, status: "Success"
+      },
+      format: ".*action:\"Accept\";.*product:\"Identity Awareness\";.*user:\"$user_name=qval$\";.*auth_method:\"$auth_method=qval$\";.*identity_src:\"$identity_src=qval$\";.*src:\"$src_ip=ip$\";.*origin:\"$origin_ip=ip$\";.*loguid:\"$log_uid=uuid$\".*",
+      halt: true
+    },
+
+    // IDENTITY AWARENESS - Auth Failure
+    {
+      id: "cp_auth_fail",
+      attributes: {
+        class_uid: 3002, class_name: "Authentication",
+        category_uid: 3, category_name: "Identity & Access Management",
+        activity_id: 1, activity_name: "Logon",
+        type_uid: 300201,
+        status_id: 2, status: "Failure",
+        severity_id: 3, severity: "Medium"
+      },
+      format: ".*action:\"Reject\";.*product:\"Identity Awareness\";.*user:\"$user_name=qval$\";.*auth_method:\"$auth_method=qval$\";.*reason:\"$status_detail=qval$\";.*src:\"$src_ip=ip$\";.*origin:\"$origin_ip=ip$\";.*loguid:\"$log_uid=uuid$\".*",
+      halt: true
+    },
+
+    // ANTI-BOT
+    {
+      id: "cp_antibot",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, category_name: "Findings",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 200401,
+        severity_id: 5, severity: "Critical",
+        "finding_info.title": "Check Point Anti-Bot Detection",
+        confidence_id: 3, confidence: "High"
+      },
+      format: ".*action:\"$cp_action=word$\";.*product:\"Anti-Bot\";.*malware_name:\"$malware_name=qval$\";.*protection_name:\"$protection=qval$\";.*src:\"$src_ip=ip$\";.*dst:\"$dst_ip=ip$\";.*origin:\"$origin_ip=ip$\";.*loguid:\"$log_uid=uuid$\".*",
+      halt: true
+    },
+
+    // ANTI-VIRUS
+    {
+      id: "cp_antivirus",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, category_name: "Findings",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 200401,
+        severity_id: 5, severity: "Critical",
+        "finding_info.title": "Check Point Anti-Virus Detection",
+        confidence_id: 3, confidence: "High"
+      },
+      format: ".*action:\"$cp_action=word$\";.*product:\"Anti-Virus\";.*malware:\"$malware_name=qval$\";.*file_name:\"$file_name=qval$\";.*src:\"$src_ip=ip$\";.*dst:\"$dst_ip=ip$\";.*origin:\"$origin_ip=ip$\";.*loguid:\"$log_uid=uuid$\".*",
+      halt: true
+    },
+
+    // THREAT EMULATION
+    {
+      id: "cp_te",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, category_name: "Findings",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 200401,
+        severity_id: 6, severity: "Fatal",
+        "finding_info.title": "Check Point Threat Emulation",
+        confidence_id: 3, confidence: "High"
+      },
+      format: ".*action:\"$cp_action=word$\";.*product:\"Threat Emulation\";.*malware:\"$malware_name=qval$\";.*file_name:\"$file_name=qval$\";.*src:\"$src_ip=ip$\";.*dst:\"$dst_ip=ip$\";.*origin:\"$origin_ip=ip$\";.*loguid:\"$log_uid=uuid$\".*",
+      halt: true
+    },
+
+    // IPS
+    {
+      id: "cp_ips",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, category_name: "Findings",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 200401,
+        severity_id: 4, severity: "High",
+        "finding_info.title": "Check Point IPS Detection",
+        confidence_id: 3, confidence: "High"
+      },
+      format: ".*action:\"$cp_action=word$\";.*product:\"IPS\";.*attack:\"$attack=qval$\";.*protection_name:\"$protection=qval$\";.*src:\"$src_ip=ip$\";.*dst:\"$dst_ip=ip$\";.*origin:\"$origin_ip=ip$\";.*loguid:\"$log_uid=uuid$\".*",
+      halt: true
+    },
+
+    // SMARTDEFENSE (Legacy IPS)
+    {
+      id: "cp_smartdef",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, category_name: "Findings",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 200401,
+        severity_id: 4, severity: "High",
+        "finding_info.title": "Check Point SmartDefense"
+      },
+      format: ".*action:\"$cp_action=word$\";.*product:\"SmartDefense\";.*attack:\"$attack=qval$\";.*src:\"$src_ip=ip$\";.*dst:\"$dst_ip=ip$\";.*origin:\"$origin_ip=ip$\";.*loguid:\"$log_uid=uuid$\".*",
+      halt: true
+    },
+
+    // URL FILTERING - Block
+    {
+      id: "cp_urlf_block",
+      attributes: {
+        class_uid: 4002, class_name: "HTTP Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 6, activity_name: "Traffic",
+        type_uid: 400206,
+        disposition_id: 2, disposition: "Blocked",
+        severity_id: 2, severity: "Low"
+      },
+      format: ".*action:\"Block\";.*product:\"URL Filtering\";.*resource:\"$url=qval$\";.*src:\"$src_ip=ip$\";.*dst:\"$dst_ip=ip$\";.*origin:\"$origin_ip=ip$\";.*loguid:\"$log_uid=uuid$\".*",
+      halt: true
+    },
+
+    // URL FILTERING - Allow
+    {
+      id: "cp_urlf_allow",
+      attributes: {
+        class_uid: 4002, class_name: "HTTP Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 6, activity_name: "Traffic",
+        type_uid: 400206,
+        disposition_id: 1, disposition: "Allowed"
+      },
+      format: ".*action:\"$cp_action=word$\";.*product:\"URL Filtering\";.*resource:\"$url=qval$\";.*src:\"$src_ip=ip$\";.*dst:\"$dst_ip=ip$\";.*origin:\"$origin_ip=ip$\";.*loguid:\"$log_uid=uuid$\".*",
+      halt: true
+    },
+
+    // APPLICATION CONTROL
+    {
+      id: "cp_appc",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 6, activity_name: "Traffic",
+        type_uid: 400106
+      },
+      format: ".*action:\"$cp_action=word$\";.*product:\"Application Control\";.*appi_name:\"$app_name=qval$\";.*app_category:\"$app_cat=qval$\";.*src:\"$src_ip=ip$\";.*dst:\"$dst_ip=ip$\";.*origin:\"$origin_ip=ip$\";.*loguid:\"$log_uid=uuid$\".*",
+      halt: true
+    },
+
+    // VPN
+    {
+      id: "cp_vpn",
+      attributes: {
+        class_uid: 4014, class_name: "Tunnel Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 1, activity_name: "Open",
+        type_uid: 401401,
+        status_id: 1, status: "Success"
+      },
+      format: ".*action:\"$cp_action=qval$\";.*product:\"VPN\";.*src:\"$src_ip=ip$\";.*dst:\"$dst_ip=ip$\";.*user:\"$user_name=qval$\";.*origin:\"$origin_ip=ip$\";.*loguid:\"$log_uid=uuid$\".*",
+      halt: true
+    },
+
+    // DLP
+    {
+      id: "cp_dlp",
+      attributes: {
+        class_uid: 2006, class_name: "Data Security Finding",
+        category_uid: 2, category_name: "Findings",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 200601,
+        severity_id: 4, severity: "High",
+        "finding_info.title": "Check Point DLP Violation"
+      },
+      format: ".*action:\"$cp_action=word$\";.*product:\"DLP\";.*dlp_rule_name:\"$dlp_rule=qval$\";.*file_name:\"$file_name=qval$\";.*src:\"$src_ip=ip$\";.*origin:\"$origin_ip=ip$\";.*loguid:\"$log_uid=uuid$\".*",
+      halt: true
+    },
+
+    // SMARTCONSOLE Audit
+    {
+      id: "cp_audit",
+      attributes: {
+        class_uid: 3004, class_name: "Entity Management",
+        category_uid: 3, category_name: "Identity & Access Management",
+        activity_id: 0, activity_name: "Unknown",
+        type_uid: 300400
+      },
+      format: ".*product:\"SmartConsole\";.*administrator:\"$admin_user=qval$\";.*operation:\"$operation=qval$\";.*object_name:\"$obj_name=qval$\";.*object_type:\"$obj_type=qval$\";.*src:\"$src_ip=ip$\";.*origin:\"$origin_ip=ip$\";.*loguid:\"$log_uid=uuid$\".*",
+      halt: true
+    },
+
+    // FIREWALL ACCEPT - generic with rule_name
+    {
+      id: "cp_fw_accept",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 6, activity_name: "Traffic",
+        type_uid: 400106,
+        disposition_id: 1, disposition: "Allowed"
+      },
+      format: ".*action:\"Accept\";.*loguid:\"$log_uid=uuid$\";.*origin:\"$origin_ip=ip$\";.*product:\"$cp_product=qval$\";.*proto:\"$proto_num=num$\";.*rule_name:\"$rule_name=qval$\";.*s_port:\"$src_port=num$\";.*service:\"$dst_port=num$\";.*src:\"$src_ip=ip$\";.*dst:\"$dst_ip=ip$\".*",
+      halt: true
+    },
+
+    // FIREWALL ACCEPT - without rule_name
+    {
+      id: "cp_fw_accept_norule",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 6, activity_name: "Traffic",
+        type_uid: 400106,
+        disposition_id: 1, disposition: "Allowed"
+      },
+      format: ".*action:\"Accept\";.*loguid:\"$log_uid=uuid$\";.*origin:\"$origin_ip=ip$\";.*product:\"$cp_product=qval$\";.*proto:\"$proto_num=num$\";.*s_port:\"$src_port=num$\";.*service:\"$dst_port=num$\";.*src:\"$src_ip=ip$\";.*dst:\"$dst_ip=ip$\".*",
+      halt: true
+    },
+
+    // FIREWALL DROP
+    {
+      id: "cp_fw_drop",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, category_name: "Findings",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 200401,
+        disposition_id: 2, disposition: "Blocked",
+        severity_id: 3, severity: "Medium",
+        "finding_info.title": "Check Point Firewall Block",
+        confidence_id: 3, confidence: "High"
+      },
+      format: ".*action:\"Drop\";.*loguid:\"$log_uid=uuid$\";.*origin:\"$origin_ip=ip$\";.*product:\"$cp_product=qval$\";.*proto:\"$proto_num=num$\";.*rule_name:\"$rule_name=qval$\";.*s_port:\"$src_port=num$\";.*service:\"$dst_port=num$\";.*src:\"$src_ip=ip$\";.*dst:\"$dst_ip=ip$\".*",
+      halt: true
+    },
+
+    // FIREWALL REJECT
+    {
+      id: "cp_fw_reject",
+      attributes: {
+        class_uid: 2004, class_name: "Detection Finding",
+        category_uid: 2, category_name: "Findings",
+        activity_id: 1, activity_name: "Create",
+        type_uid: 200401,
+        disposition_id: 2, disposition: "Blocked",
+        severity_id: 3, severity: "Medium",
+        "finding_info.title": "Check Point Firewall Reject",
+        confidence_id: 3, confidence: "High"
+      },
+      format: ".*action:\"Reject\";.*loguid:\"$log_uid=uuid$\";.*origin:\"$origin_ip=ip$\";.*product:\"$cp_product=qval$\";.*proto:\"$proto_num=num$\";.*rule_name:\"$rule_name=qval$\";.*s_port:\"$src_port=num$\";.*service:\"$dst_port=num$\";.*src:\"$src_ip=ip$\";.*dst:\"$dst_ip=ip$\".*",
+      halt: true
+    },
+
+    // GENERIC FALLBACK - just extract src/dst if present
+    {
+      id: "cp_fallback",
+      attributes: {
+        class_uid: 4001, class_name: "Network Activity",
+        category_uid: 4, category_name: "Network Activity",
+        activity_id: 0, activity_name: "Unknown",
+        type_uid: 400100
+      },
+      format: ".*src:\"$src_ip=ip$\";.*dst:\"$dst_ip=ip$\".*"
+    }
+  ],
+
+  mappings: {
+    version: 1,
+    mappings: [
+      {
+        transformations: [
+          { rename: { from: "src_ip", to: "src_endpoint.ip" } },
+          { rename: { from: "dst_ip", to: "dst_endpoint.ip" } },
+          { rename: { from: "src_port", to: "src_endpoint.port" } },
+          { rename: { from: "dst_port", to: "dst_endpoint.port" } },
+          { rename: { from: "iface_name", to: "src_endpoint.interface_name" } },
+          { rename: { from: "proto_num", to: "connection_info.protocol_num" } },
+          { rename: { from: "iface_dir", to: "connection_info.direction" } },
+          { rename: { from: "user_name", to: "actor.user.name" } },
+          { rename: { from: "admin_user", to: "actor.user.name" } },
+          { rename: { from: "rule_name", to: "firewall_rule.name" } },
+          { rename: { from: "rule_uid", to: "firewall_rule.uid" } },
+          { rename: { from: "app_name", to: "app.name" } },
+          { rename: { from: "app_cat", to: "app.category" } },
+          { rename: { from: "url", to: "http_request.url.original" } },
+          { rename: { from: "malware_name", to: "malware.name" } },
+          { rename: { from: "attack", to: "finding_info.title" } },
+          { rename: { from: "protection", to: "finding_info.desc" } },
+          { rename: { from: "file_name", to: "file.name" } },
+          { rename: { from: "auth_method", to: "auth_protocol" } },
+          { rename: { from: "dlp_rule", to: "policy.name" } },
+          { rename: { from: "operation", to: "activity_name" } },
+          { rename: { from: "obj_name", to: "entity.name" } },
+          { rename: { from: "obj_type", to: "entity.type" } },
+          { rename: { from: "status_detail", to: "status_detail" } },
+          { rename: { from: "origin_ip", to: "device.ip" } },
+          { rename: { from: "cp_hostname", to: "device.hostname" } },
+          { rename: { from: "cp_product", to: "metadata.product.feature.name" } },
+          { rename: { from: "log_uid", to: "metadata.uid" } },
+          { rename: { from: "cp_action", to: "unmapped.action" } },
+          { rename: { from: "layer_name", to: "unmapped.layer_name" } },
+          { rename: { from: "identity_src", to: "unmapped.identity_source" } },
+          { rename: { from: "time_epoch", to: "unmapped.time_epoch" } }
+        ]
+      }
+    ]
+  }
+}
