@@ -1,0 +1,12 @@
+{
+  "_comment": "Copy to config.json (gitignored) and fill in your SDL keys. Generate them in the SentinelOne console under Singularity Data Lake -> API Keys. log_write_key needs 'Log Write Access'. log_read_key needs 'Log Read Access'. config_read_key needs 'Configuration Read'. config_write_key needs 'Configuration Write'. console_api_token is a regular console user/service-user API token; it works for query and config methods but NOT for uploadLogs (uploadLogs requires a real Log Write key).",
+  "base_url": "https://xdr.us1.sentinelone.net/",
+  "log_write_key": "REPLACE_WITH_LOG_WRITE_KEY",
+  "log_read_key": "REPLACE_WITH_LOG_READ_KEY",
+  "config_read_key": "REPLACE_WITH_CONFIG_READ_KEY",
+  "config_write_key": "REPLACE_WITH_CONFIG_WRITE_KEY",
+  "console_api_token": "REPLACE_WITH_CONSOLE_API_TOKEN_OR_LEAVE_EMPTY",
+  "s1_scope": "",
+  "verify_tls": true,
+  "timeout_seconds": 30
+}
