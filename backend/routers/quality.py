@@ -11,16 +11,52 @@ router = APIRouter()
 PARSERS_DIR = "/app/parsers"
 
 
+# Files in /app/parsers/ are also used to hold non-parser SDL artefacts
+# (UEBA analytics tables, saved searches, dashboard configs) that the SDL
+# config-files API returns from the same directory. Detect real parsers by
+# looking for parser-config keywords in the file header.
+_PARSER_MARKER_RE = re.compile(
+    r"^\s*(attributes|patterns|formats|patternRefs|rewrites|parser)\s*[:=]",
+    re.MULTILINE,
+)
+# Names known to be non-parser SDL configs even if the marker check is fooled.
+_PARSER_NAME_DENYLIST = re.compile(
+    r"^(ueba[_\-]|searches$|alerts$|.*_baselines?_|.*_features?_|.*_scores?_|"
+    r"bsi[_\-]|.*-overview$|.*[_\-]membership$|.*[_\-]risk$|.*[_\-]smoke[_\-]test$|"
+    r".*[_\-]test[_\-](default|merge|replace|same))",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_parser(path: str, name: str) -> bool:
+    """Return True if a file under /app/parsers/ is actually a parser config."""
+    if _PARSER_NAME_DENYLIST.match(name):
+        return False
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            head = fh.read(4096)
+    except OSError:
+        return False
+    return bool(_PARSER_MARKER_RE.search(head))
+
+
 @router.get("/parsers")
 def list_parser_files():
-    """List parser filenames available under /app/parsers/ for the Test Runner."""
+    """List parser filenames under /app/parsers/ for the Test Runner.
+    Excludes non-parser SDL artefacts (UEBA tables, searches, dashboards).
+    """
     try:
-        names = sorted(
-            e.name for e in os.scandir(PARSERS_DIR)
+        candidates = [
+            e for e in os.scandir(PARSERS_DIR)
             if e.is_file() and not e.name.startswith(".")
-        )
+        ]
     except FileNotFoundError:
-        names = []
+        return {"parsers": [], "count": 0}
+
+    names = sorted(
+        e.name for e in candidates
+        if _looks_like_parser(e.path, e.name)
+    )
     return {"parsers": names, "count": len(names)}
 
 
@@ -293,6 +329,44 @@ def _to_py_backref(s: str) -> str:
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
+@router.post("/sample-unlabelled")
+async def sample_unlabelled(req: SampleEventsRequest):
+    """Return a sample of events that have no dataSource.name — these need parsers.
+    Also runs a count query so the caller can update the banner with the real total.
+    """
+    import asyncio
+    from routers import coverage as _coverage
+
+    filter_expr = "!(dataSource.name = *) !(source = 'scalyr')"
+    from_dt, to_dt = _date_range_hours(req.hours)
+
+    sample_result, count_result = await asyncio.gather(
+        s1_client.run_powerquery(f"{filter_expr} | limit {req.limit}", from_dt, to_dt),
+        s1_client.run_powerquery(f"{filter_expr} | group events=count()", from_dt, to_dt, max_count=50_000_000),
+    )
+
+    rows = sample_result if isinstance(sample_result, list) else (sample_result.get("rows") or sample_result.get("events") or [])
+    events = [_flatten_event(row) for row in rows]
+    non_empty_keys: set = set()
+    for ev in events:
+        for k, v in ev.items():
+            if v is not None and v != "" and v != "null":
+                non_empty_keys.add(k)
+    events = [{k: v for k, v in ev.items() if k in non_empty_keys} for ev in events]
+
+    count_rows = count_result.get("events", []) if isinstance(count_result, dict) else []
+    total = count_rows[0].get("events", 0) if count_rows else 0
+    _coverage._unlabelled_event_count = total
+
+    return {
+        "events": events,
+        "count": len(events),
+        "total": total,
+        "hours": req.hours,
+        "columns_seen": sorted(non_empty_keys),
+    }
+
 
 @router.post("/sample-events")
 async def sample_events(req: SampleEventsRequest):
