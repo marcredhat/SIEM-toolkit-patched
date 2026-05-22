@@ -32,8 +32,8 @@ browser → nginx (port 3001) → single-page HTML/JS application
                 ↓
     ┌───────────────────────────┐
     │  SentinelOne APIs         │
-    │  • Management API         │  demo.sentinelone.net
-    │  • Scalyr XDR PowerQuery  │  xdr.us1.sentinelone.net
+    │  • Management API         │  
+    │  • XDR PowerQuery  │  
     └───────────────────────────┘
 ```
 
@@ -46,43 +46,29 @@ All services run via Docker Compose. The `parsers/` directory is volume-mounted 
 ### 1. Clone and Configure
 
 ```bash
-git clone https://github.com/mickbrowns1/SIEM-Toolkit.git
-cd SIEM-Toolkit
+git clone 
+cd SIEM-Toolkit-patched
 cp .env.example .env
 ```
 
 Edit `.env` with your credentials:
 
 ```env
-S1_BASE_URL=https://demo.sentinelone.net       # Your console URL
-S1_API_TOKEN=eyJ...                             # Service user API token (account scope or higher)
-SDL_XDR_URL=https://xdr.us1.sentinelone.net    # Scalyr XDR endpoint
-SDL_LOG_READ_KEY=1j2IU0S...                     # Data Lake read key
+S1_BASE_URL=       # Your console URL
+S1_API_TOKEN=...                             # Service user API token (account scope or higher)
+SDL_XDR_URL=    #  XDR endpoint
+SDL_LOG_READ_KEY=                    # Data Lake read key
 ANTHROPIC_API_KEY=                              # Optional — not currently used
 ```
 
-**S1_API_TOKEN** — generate at *Settings → Users → Service Users* in the console. The service user should be provisioned at **account scope** or higher.  
-**SDL_LOG_READ_KEY** — found at *Settings → Integrations → Data Lake API Keys*.
+**S1_API_TOKEN** — generate at *Settings → Users → Service Users* in the console. 
+Ideally, the service user API token must be at **account scope** or higher. Site-scoped tokens will have limited visibility into rules and may see reduced source counts.
 
-### 2. Add the Detection Library (strongly recommended)
+**SDL_LOG_READ_KEY** 
 
-The Detection Fields Missing column and per-source detection counts on the Coverage Map require a local detections export. This is generated from the [detection-validator](https://github.com/mickbrowns1/detection-validator) repository.
 
-```bash
-# Clone the detection-validator repo alongside this one
-git clone https://github.com/mickbrowns1/detection-validator.git
-cd detection-validator
 
-# Follow its README to generate the export, then copy the output here:
-mkdir -p ../SIEM-Toolkit/data
-cp data/data/detections/extracted.json ../SIEM-Toolkit/data/detections.json
-
-cd ../SIEM-Toolkit
-```
-
-The `data/` directory is gitignored and never committed. Once the stack is running, click **Load Detections** on the Coverage Map to import the rules into the database.
-
-### 3. Add Parser Files (optional but strongly recommended)
+### 2. Add Parser Files 
 
 Place your SDL parser JSON files into the `parsers/` directory. The backend reads them directly at query time — no rebuild is necessary.
 
@@ -90,7 +76,7 @@ Place your SDL parser JSON files into the `parsers/` directory. The backend read
 cp ~/my-parsers/*.json parsers/
 ```
 
-### 4. Start the Stack
+### 3. Start the Stack
 
 ```bash
 docker-compose up -d --build
@@ -268,9 +254,35 @@ curl -X DELETE http://localhost:8001/api/coverage/reset
 
 ---
 
-## Notes
+```
+Nothing pushes parsers to the SDL tenant
+The data flow is strictly one-way: SDL tenant → local disk.
 
-- The backend queries your **demo tenant** (`demo.sentinelone.net`) — not usea1-purple or any other tenant. Ensure your `S1_BASE_URL` and `SDL_LOG_READ_KEY` are pointed at the same tenant.
-- Parser files in `parsers/` are read at query time, not on startup — add or update files at any point without rebuilding the image.
-- The filter simulator is entirely read-only and makes no changes whatsoever to your tenant configuration.
-- The service user API token must be at **account scope** or higher. Site-scoped tokens will have limited visibility into rules and may see reduced source counts.
+What actually happens
+┌──────────────────┐    GET /api/listFiles/logParsers/    ┌──────────────────┐
+│   SDL tenant     │ ───────────────────────────────────▶ │ tools/sync_sdl_  │
+│                  │    GET /api/getFile/logParsers/...   │  parsers.py      │
+└──────────────────┘                                       └────────┬─────────┘
+                                                                    │ writes
+                                                                    ▼
+                                                          ./parsers/<name>
+                                                                    │
+                                                                    │ bind-mount
+                                                                    ▼
+                                                          /app/parsers (in container)
+                                                                    │
+                                                                    │ read-only
+                                                                    ▼
+                                            ┌──────────────────────────────────┐
+                                            │ POST /api/quality/test-parser    │
+                                            │ POST /api/quality/sync-from-sdl  │
+                                            │ GET  /api/quality/parsers        │
+                                            └──────────────────────────────────┘
+
+Endpoint / 	What it really does
+Sync from SDL (POST /api/quality/sync-from-sdl)		Downloads parsers from the tenant into /app/parsers/
+Load SDL Parsers (UI button)	Just re-indexes whatever files already exist in /app/parsers/
+Test Parser (POST /api/quality/test-parser)		Runs the parser logic locally in Python; tenant never touched
+tools/sync_sdl_parsers.py	(helper)	Downloads parsers; never uploads
+```
+
