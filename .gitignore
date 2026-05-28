@@ -11,3 +11,9 @@ data/
 # Parsers ARE committed in this fork (snapshot of the demo tenant).
 # .env still excluded for safety.
 tools/stormshield-verify/config.json
+
+# Sigma->PowerQuery pipeline: real tenant credentials live here.
+# Use tenant_config.example.json as the template.
+tenant_config.json
+deployed_rule_ids.json
+
